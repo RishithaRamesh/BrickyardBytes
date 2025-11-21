@@ -251,7 +251,7 @@ VITE_API_BASE=http://localhost:5050
 - Vite error about Node version: install Node 20.19+ or 22.12+.
 - Browser "Failed to fetch": backend not running, wrong port in `.env`, or CORS mismatch—check Network tab and `CORS_ORIGINS`.
 - 405 Method Not Allowed when browsing /auth/register: it’s POST-only—use the form or Swagger UI.
-- Port 5000 access denied on Windows: use an alternate port like 5050 (update frontend `.env`).
+- Port 5050 access denied on Windows: use an alternate port like 5050 (update frontend `.env`).
 - PowerShell cannot activate venv: use `.\.venv\Scripts\python.exe -m uvicorn ...` or `Set-ExecutionPolicy -Scope Process Bypass` temporarily.
 
 

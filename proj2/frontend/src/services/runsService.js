@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5050';
 
 function getAuth() {
   try { return JSON.parse(localStorage.getItem('auth')); } catch { return null; }

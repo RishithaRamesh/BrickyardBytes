@@ -1,5 +1,4 @@
 import React from 'react';
-import { useAuth } from './hooks/useAuth';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
@@ -18,6 +17,7 @@ import RunDetails from './pages/RunDetails';
 //Components
 import Navbar from './components/Navbar';
 import Footer from "./components/Footer";
+import ChatbotLauncher from './components/ChatbotLauncher';
 
 function Layout({ children }) {
   const location = useLocation();
@@ -27,13 +27,12 @@ function Layout({ children }) {
       {!hideNavbar && <Navbar />}
       <main>{children}</main>
       {!hideNavbar && <Footer/>}
+      <ChatbotLauncher />
     </>
   );
 }
 
 function App() {
-  const { user } = useAuth();
-
   return (
     <AuthProvider>
       <ToastProvider>
