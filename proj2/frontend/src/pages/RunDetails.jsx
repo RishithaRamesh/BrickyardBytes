@@ -101,6 +101,9 @@ export default function RunDetails() {
           <div className="run-card-body">
             <p><strong>Status:</strong> {run.status}</p>
             <p><strong>Drop:</strong> {run.drop_point}</p>
+            {run.description && (
+              <p><strong>Description:</strong> {run.description}</p>
+            )}
             <p><strong>Max joiners:</strong> {run.capacity}</p>
             <p><strong>Seats left:</strong> {run.seats_remaining}</p>
             <p><strong>Total participants:</strong> {1 + (Array.isArray(run.orders) ? run.orders.length : 0)}</p>

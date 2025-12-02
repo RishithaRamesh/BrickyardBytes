@@ -54,6 +54,29 @@ def ensure_foodrun_capacity_column() -> None:
         pass
 
 
+def ensure_foodrun_description_column() -> None:
+    try:
+        if not DATABASE_URL.startswith("sqlite"):
+            return
+        with engine.begin() as conn:
+            cols = [
+                row[1] for row in conn.execute(text("PRAGMA table_info('foodrun')"))
+            ]
+            if "description" not in cols:
+                conn.execute(
+                    text("ALTER TABLE foodrun ADD COLUMN description TEXT DEFAULT ''")
+                )
+            conn.execute(
+                text(
+                    "UPDATE foodrun SET description = '' "
+                    "WHERE description IS NULL"
+                )
+            )
+    except Exception:
+        # Same best-effort posture as other ensure helpers
+        pass
+
+
 def ensure_order_pin_column() -> None:
     try:
         if not DATABASE_URL.startswith("sqlite"):

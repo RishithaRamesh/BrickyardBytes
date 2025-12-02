@@ -52,6 +52,28 @@ def test_completed_run_moves_to_runner_history(app_client):
     assert any(r["id"] == run_id and r["status"] == "completed" for r in mine_hist)
 
 
+def test_runner_history_sorted_newest_first(app_client):
+    runner_token, _ = register_and_login(app_client, "ph_runner_sort@ncsu.edu")
+    created_ids = []
+    for idx in range(3):
+        run = create_run(
+            app_client,
+            runner_token,
+            restaurant=f"SortCafe {idx}",
+            eta=f"12:0{idx}",
+        )
+        created_ids.append(run["id"])
+        app_client.put(
+            f"/runs/{run['id']}/complete",
+            headers={"Authorization": f"Bearer {runner_token}"},
+        )
+    mine_hist = app_client.get(
+        "/runs/mine/history", headers={"Authorization": f"Bearer {runner_token}"}
+    ).json()
+    returned_ids = [entry["id"] for entry in mine_hist]
+    assert returned_ids == list(reversed(created_ids))
+
+
 def test_completed_run_appears_in_joined_history(app_client):
     runner_token, _ = register_and_login(app_client, "ph_runner3@ncsu.edu")
     u_token, _ = register_and_login(app_client, "ph_user@ncsu.edu")
@@ -66,6 +88,37 @@ def test_completed_run_appears_in_joined_history(app_client):
         "/runs/joined/history", headers={"Authorization": f"Bearer {u_token}"}
     ).json()
     assert any(r["id"] == run_id for r in joined_hist)
+
+
+def test_joined_history_sorted_newest_first(app_client):
+    runner_token, _ = register_and_login(app_client, "ph_runner_sort_join@ncsu.edu")
+    u_token, _ = register_and_login(app_client, "ph_user_sort_join@ncsu.edu")
+    run_ids = []
+    for idx in range(3):
+        run = create_run(
+            app_client,
+            runner_token,
+            restaurant=f"JoinSort {idx}",
+            eta=f"13:0{idx}",
+        )
+        run_ids.append(run["id"])
+        join_resp = join_run(
+            app_client,
+            u_token,
+            run["id"],
+            items=f"{idx+1}x Item",
+            amount=5.0 + idx,
+        )
+        assert join_resp.status_code in (200, 201)
+        app_client.put(
+            f"/runs/{run['id']}/complete",
+            headers={"Authorization": f"Bearer {runner_token}"},
+        )
+    joined_hist = app_client.get(
+        "/runs/joined/history", headers={"Authorization": f"Bearer {u_token}"}
+    ).json()
+    returned_ids = [entry["id"] for entry in joined_hist]
+    assert returned_ids == list(reversed(run_ids))
 
 
 def test_points_visible_after_completion(app_client):
