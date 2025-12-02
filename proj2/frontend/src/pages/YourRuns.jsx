@@ -82,6 +82,9 @@ export default function YourRuns() {
                   <p><strong>Max joiners:</strong> {run.capacity}</p>
                   <p><strong>Joined:</strong> {Array.isArray(run.orders) ? run.orders.length : 0}</p>
                   <p><strong>Seats left:</strong> {run.seats_remaining}</p>
+                  {run.description && (
+                    <p className="run-card-description">{run.description}</p>
+                  )}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <Link className="btn btn-secondary" to={`/your-runs/${run.id}`}>Manage</Link>
                     {run.status === 'active' && (
@@ -101,4 +104,3 @@ export default function YourRuns() {
     </div>
   );
 }
-

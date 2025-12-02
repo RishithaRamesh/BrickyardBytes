@@ -64,6 +64,7 @@ class FoodRunCreate(BaseModel):
     drop_point: str
     eta: str
     capacity: int = 5
+    description: Optional[str] = None
 
 
 class FoodRunResponse(FoodRunCreate):

@@ -14,6 +14,7 @@ from .db import (
     get_session,
     ensure_user_points_column,
     ensure_foodrun_capacity_column,
+    ensure_foodrun_description_column,
     ensure_order_pin_column,
     ensure_foodrun_status_lowercase,
 )
@@ -70,6 +71,15 @@ def build_default_run_description(restaurant: str, drop_point: str, eta: str) ->
     )
 
 
+def resolve_run_description(
+    restaurant: str | None, drop_point: str | None, eta: str | None, description: str | None
+) -> str:
+    text = (description or "").strip()
+    if text:
+        return text
+    return build_default_run_description(restaurant or "", drop_point or "", eta or "")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create DB tables on startup
@@ -77,6 +87,7 @@ async def lifespan(app: FastAPI):
     # Ensure SQLite dev DBs have newly added columns (e.g., 'points')
     ensure_user_points_column()
     ensure_foodrun_capacity_column()
+    ensure_foodrun_description_column()
     ensure_order_pin_column()
     ensure_foodrun_status_lowercase()
     yield
@@ -231,7 +242,14 @@ def create_run(
     session: Session = Depends(get_session),
 ):
     user_id = int(claims["sub"])
-    food_run = FoodRun(**run.model_dump(), runner_id=user_id)
+    payload = run.model_dump()
+    payload["description"] = resolve_run_description(
+        payload.get("restaurant"),
+        payload.get("drop_point"),
+        payload.get("eta"),
+        payload.get("description"),
+    )
+    food_run = FoodRun(**payload, runner_id=user_id)
     food_run.status = normalize_status(food_run.status)
     session.add(food_run)
     session.commit()
@@ -250,9 +268,13 @@ def create_run(
             "eta",
             "capacity",
             "status",
+            "description",
         }
     )
     base["status"] = normalize_status(base.get("status"))
+    base["description"] = resolve_run_description(
+        base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
+    )
     return {
         **base,
         "runner_username": claims.get("email", str(user_id)),
@@ -284,9 +306,13 @@ def list_runs(
                 "eta",
                 "capacity",
                 "status",
+                "description",
             }
         )
         base["status"] = normalize_status(base.get("status"))
+        base["description"] = resolve_run_description(
+            base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
+        )
         responses.append(
             {
                 **base,
@@ -428,7 +454,12 @@ def list_available_runs(
                     "eta",
                     "capacity",
                     "status",
+                    "description",
                 }
+            )
+            base["status"] = normalize_status(base.get("status"))
+            base["description"] = resolve_run_description(
+                base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
             )
             responses.append(
                 {
@@ -483,9 +514,13 @@ def list_my_runs(
                 "eta",
                 "capacity",
                 "status",
+                "description",
             }
         )
         base["status"] = normalize_status(base.get("status"))
+        base["description"] = resolve_run_description(
+            base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
+        )
         responses.append(
             {
                 **base,
@@ -540,9 +575,13 @@ def get_run_details(
             "eta",
             "capacity",
             "status",
+            "description",
         }
     )
     base["status"] = normalize_status(base.get("status"))
+    base["description"] = resolve_run_description(
+        base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
+    )
     return {
         **base,
         "runner_username": runner.email if runner else str(run.runner_id),
@@ -592,6 +631,7 @@ def list_joined_runs(
             )
         ).first()
         # Build explicit payload to avoid any None values breaking response validation
+        description = resolve_run_description(r.restaurant, r.drop_point, r.eta, r.description)
         payload = {
             "id": r.id,
             "runner_id": r.runner_id,
@@ -599,10 +639,11 @@ def list_joined_runs(
             "drop_point": r.drop_point or "",
             "eta": r.eta or "",
             "capacity": cap,
-            "status": r.status or "active",
+            "status": normalize_status(r.status),
             "runner_username": runner.email if runner else str(r.runner_id),
             "seats_remaining": seats_remaining,
             "orders": [],
+            "description": description,
         }
         if mine:
             payload["my_order"] = {
@@ -626,7 +667,7 @@ def list_my_runs_history(
         select(FoodRun).where(
             FoodRun.runner_id == user_id,
             active_status_expr() != ACTIVE_STATUS,
-        )
+        ).order_by(FoodRun.created_at.desc(), FoodRun.id.desc())
     ).all()
     responses = []
     for r in runs:
@@ -655,9 +696,13 @@ def list_my_runs_history(
                 "eta",
                 "capacity",
                 "status",
+                "description",
             }
         )
         base["status"] = normalize_status(base.get("status"))
+        base["description"] = resolve_run_description(
+            base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
+        )
         responses.append(
             {
                 **base,
@@ -682,7 +727,7 @@ def list_joined_runs_history(
     runs = session.exec(
         select(FoodRun).where(
             FoodRun.id.in_(run_ids), active_status_expr() != ACTIVE_STATUS
-        )
+        ).order_by(FoodRun.created_at.desc(), FoodRun.id.desc())
     ).all()
     responses = []
     for r in runs:
@@ -703,9 +748,13 @@ def list_joined_runs_history(
                 "eta",
                 "capacity",
                 "status",
+                "description",
             }
         )
         base["status"] = normalize_status(base.get("status"))
+        base["description"] = resolve_run_description(
+            base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
+        )
         payload = {
             **base,
             "runner_username": runner.email if runner else str(r.runner_id),

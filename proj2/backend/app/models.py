@@ -25,6 +25,9 @@ class FoodRun(SQLModel, table=True):
     eta: str
     capacity: int = Field(default=5)  # maximum number of joiners/orders
     status: str = Field(default="active")  # active, completed, cancelled
+    description: Optional[str] = Field(
+        default=None, sa_column=Column(String, nullable=True)
+    )
     created_at: Optional[str] = Field(
         default=None,
         sa_column=Column(

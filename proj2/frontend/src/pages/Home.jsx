@@ -127,6 +127,9 @@ export default function Home() {
                   <div className="run-card-body">
                     <p><strong>ETA:</strong> {run.eta}</p>
                     <p><strong>Seats left:</strong> {run.seats_remaining}</p>
+                    {run.description && (
+                      <p className="run-card-description">{run.description}</p>
+                    )}
                     {run.my_order?.pin && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <strong>Your PIN:</strong>
