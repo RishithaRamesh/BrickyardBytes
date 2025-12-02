@@ -20,11 +20,11 @@ def create_run(
     return r.json()
 
 
-def join_run(client, token, run_id, items="1x Coffee", amount=3.5):
+def join_run(client, token, run_id, items="1x Coffee", amount=3.5, tip=0.0):
     return client.post(
         f"/runs/{run_id}/orders",
         headers={"Authorization": f"Bearer {token}"},
-        json={"items": items, "amount": amount},
+        json={"items": items, "amount": amount, "tip": tip},
     )
 
 

@@ -62,10 +62,11 @@ export default function Home() {
     setActiveRun(run);
   }
 
-  async function handleConfirmOrder(cart = []) {
+  async function handleConfirmOrder(cart = [], tipAmount = 0) {
     if (!activeRun) return;
     // cart: [{id, name, price, qty}]
     const amount = cart.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.qty) || 0), 0);
+    const safeTip = Math.max(Number(tipAmount) || 0, 0);
     const items = cart
       .filter(i => (Number(i.qty) || 0) > 0)
       .map(i => `${i.qty}x ${i.name}`)
@@ -73,7 +74,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const resp = await joinRun(activeRun.id, { items, amount });
+      const resp = await joinRun(activeRun.id, { items, amount, tip: safeTip });
       if (resp?.pin) {
         showToast(`Your pickup PIN is ${resp.pin}`, { type: 'info', duration: 7000 });
       }
@@ -153,6 +154,11 @@ export default function Home() {
                           }}
                         >Copy</button>
                       </div>
+                    )}
+                    {typeof run.my_order?.tip === "number" && (
+                      <p style={{ marginTop: 8 }}>
+                        <strong>Your tip:</strong> ${Number(run.my_order.tip).toFixed(2)}
+                      </p>
                     )}
                   </div>
                   <div className="run-card-footer">

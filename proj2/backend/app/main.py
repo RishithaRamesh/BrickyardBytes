@@ -16,6 +16,7 @@ from .db import (
     ensure_foodrun_capacity_column,
     ensure_foodrun_description_column,
     ensure_order_pin_column,
+    ensure_order_tip_column,
     ensure_foodrun_status_lowercase,
 )
 from .models import User, FoodRun, Order
@@ -89,6 +90,7 @@ async def lifespan(app: FastAPI):
     ensure_foodrun_capacity_column()
     ensure_foodrun_description_column()
     ensure_order_pin_column()
+    ensure_order_tip_column()
     ensure_foodrun_status_lowercase()
     yield
 
@@ -373,6 +375,7 @@ def create_order(
         "status": order_row.status,
         "items": order_row.items,
         "amount": order_row.amount,
+        "tip": order_row.tip,
         "user_email": u.email if u else str(user_id),
         "pin": pin,
     }
@@ -502,6 +505,7 @@ def list_my_runs(
                     "status": o.status,
                     "items": o.items,
                     "amount": o.amount,
+                    "tip": o.tip,
                     "user_email": u.email if u else str(o.user_id),
                 }
             )
@@ -562,6 +566,7 @@ def get_run_details(
                 "status": o.status,
                 "items": o.items,
                 "amount": o.amount,
+                "tip": o.tip,
                 "user_email": u.email if u else str(o.user_id),
             }
         )
@@ -651,6 +656,7 @@ def list_joined_runs(
                 "run_id": mine.run_id,
                 "items": mine.items,
                 "amount": mine.amount,
+                "tip": mine.tip,
                 "status": mine.status,
                 "pin": mine.pin or "",
             }
@@ -684,6 +690,7 @@ def list_my_runs_history(
                     "status": o.status,
                     "items": o.items,
                     "amount": o.amount,
+                    "tip": o.tip,
                     "user_email": u.email if u else str(o.user_id),
                 }
             )
@@ -767,6 +774,7 @@ def list_joined_runs_history(
                 "run_id": mine.run_id,
                 "items": mine.items,
                 "amount": mine.amount,
+                "tip": mine.tip,
                 "status": mine.status,
                 "pin": (mine.pin or ""),
             }

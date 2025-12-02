@@ -304,11 +304,9 @@ body {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 50px); /* full screen minus navbar */
-  padding-top: 90px;
-  overflow: hidden;
-  box-sizing: border-box;
+  min-height: calc(100vh - 50px); /* full screen minus navbar */
   padding-top: 80px;
+  overflow-y: auto;
 }
 
 

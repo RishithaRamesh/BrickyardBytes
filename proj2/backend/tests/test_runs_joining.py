@@ -1,3 +1,5 @@
+import pytest
+
 from conftest import register_and_login
 
 
@@ -20,11 +22,11 @@ def create_run(
     return r.json()
 
 
-def join_run(client, token, run_id, items="1x Coffee", amount=3.50):
+def join_run(client, token, run_id, items="1x Coffee", amount=3.50, tip=0.0):
     return client.post(
         f"/runs/{run_id}/orders",
         headers={"Authorization": f"Bearer {token}"},
-        json={"items": items, "amount": amount},
+        json={"items": items, "amount": amount, "tip": tip},
     )
 
 
@@ -174,3 +176,27 @@ def test_available_excludes_runner_and_full_runs(app_client):
         "/runs/available", headers={"Authorization": f"Bearer {other_token}"}
     )
     assert all(r["id"] != run_id for r in r_av_other.json())
+
+
+def test_runner_can_view_tip_amounts(app_client):
+    runner_token, _ = register_and_login(app_client, "tip_runner@ncsu.edu")
+    joiner_token, _ = register_and_login(app_client, "tip_joiner@ncsu.edu")
+    run = create_run(app_client, runner_token, capacity=2)
+    run_id = run["id"]
+    tip_value = 2.75
+    join_resp = join_run(
+        app_client,
+        joiner_token,
+        run_id,
+        items="1x Cold Brew",
+        amount=6.0,
+        tip=tip_value,
+    )
+    assert join_resp.status_code in (200, 201)
+    assert join_resp.json().get("tip") == pytest.approx(tip_value)
+
+    # Runner should see the tip when viewing their runs
+    runs_resp = app_client.get("/runs/mine", headers={"Authorization": f"Bearer {runner_token}"})
+    assert runs_resp.status_code == 200
+    run_entry = next(r for r in runs_resp.json() if r["id"] == run_id)
+    assert any(abs(o.get("tip", -1) - tip_value) < 1e-6 for o in run_entry.get("orders", []))

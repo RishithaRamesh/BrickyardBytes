@@ -4,6 +4,7 @@ export default function Menu({ restaurant, menuItems, onClose, onConfirm }) {
   const [selectedId, setSelectedId] = useState("");
   const [qty, setQty] = useState(1);
   const [cart, setCart] = useState([]); // [{id, name, price, qty}]
+  const [tip, setTip] = useState("0");
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -35,11 +36,13 @@ export default function Menu({ restaurant, menuItems, onClose, onConfirm }) {
   };
 
   const total = cart.reduce((sum, i) => sum + i.qty * i.price, 0);
+  const parsedTip = Math.max(Number(tip) || 0, 0);
 
   const handleConfirm = () => {
     if (cart.length > 0) {
-      onConfirm(cart);
+      onConfirm(cart, parsedTip);
       setCart([]);
+      setTip("0");
     }
     onClose();
   };
@@ -75,7 +78,26 @@ export default function Menu({ restaurant, menuItems, onClose, onConfirm }) {
               ))}
             </ul>
             <div style={{ display: 'flex', justifyContent: 'flex-end', fontWeight: 700 }}>
-              Total: ${total.toFixed(2)}
+              <div style={{ textAlign: 'right' }}>
+                <div>Items total: ${total.toFixed(2)}</div>
+                <div style={{ marginTop: 4 }}>
+                  <label htmlFor="tip-input" style={{ fontWeight: 400, marginRight: 8 }}>
+                    Tip for broadcaster (optional):
+                  </label>
+                  <input
+                    id="tip-input"
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={tip}
+                    onChange={(e) => setTip(e.target.value)}
+                    style={{ width: 100 }}
+                  />
+                </div>
+                <div style={{ marginTop: 4, fontWeight: 700 }}>
+                  Grand total: ${(total + parsedTip).toFixed(2)}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -83,7 +105,7 @@ export default function Menu({ restaurant, menuItems, onClose, onConfirm }) {
         <div className="menu-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={handleConfirm} disabled={cart.length === 0}>
-            Confirm Order{cart.length ? ` ($${total.toFixed(2)})` : ''}
+            Confirm Order{cart.length ? ` ($${(total + parsedTip).toFixed(2)})` : ''}
           </button>
         </div>
       </div>

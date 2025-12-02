@@ -42,6 +42,7 @@ class Order(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id")
     items: str  # JSON string of ordered items
     amount: float
+    tip: float = Field(default=0.0)
     status: str = Field(default="pending")  # pending, paid, delivered
     pin: Optional[str] = None  # 4-digit PIN for order pickup verification
     created_at: Optional[str] = Field(

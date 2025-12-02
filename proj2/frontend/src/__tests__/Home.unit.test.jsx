@@ -13,7 +13,7 @@ vi.mock("../components/Menu", () => ({
   __esModule: true,
   default: ({ onConfirm, onClose }) => (
     <div data-testid="menu">
-      <button onClick={() => onConfirm([])}>Confirm</button>
+      <button onClick={() => onConfirm([], 0)}>Confirm</button>
       <button onClick={onClose}>Close</button>
     </div>
   ),
@@ -84,7 +84,7 @@ describe("Home Page Unit Tests", () => {
     fireEvent.click(confirmButton);
 
     await waitFor(() =>
-      expect(joinRun).toHaveBeenCalledWith(1, expect.any(Object))
+      expect(joinRun).toHaveBeenCalledWith(1, expect.objectContaining({ tip: 0 }))
     );
   });
 
