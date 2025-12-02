@@ -90,6 +90,26 @@ def ensure_order_pin_column() -> None:
         pass
 
 
+def ensure_order_tip_column() -> None:
+    try:
+        if not DATABASE_URL.startswith("sqlite"):
+            return
+        with engine.begin() as conn:
+            cols = [row[1] for row in conn.execute(text("PRAGMA table_info('order')"))]
+            if "tip" not in cols:
+                conn.execute(
+                    text("ALTER TABLE 'order' ADD COLUMN tip REAL DEFAULT 0.0")
+                )
+            conn.execute(
+                text(
+                    "UPDATE 'order' SET tip = 0 WHERE tip IS NULL OR NOT (tip >= 0)"
+                )
+            )
+    except Exception:
+        # Same forgiving posture—never block startup for dev schemas
+        pass
+
+
 def ensure_foodrun_status_lowercase() -> None:
     """Normalize legacy rows so status comparisons behave consistently."""
     try:

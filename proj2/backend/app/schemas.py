@@ -22,6 +22,7 @@ class OrderCreate(BaseModel):
     items: str
     # enforce positive amounts for orders
     amount: float = Field(..., gt=0)
+    tip: float = Field(default=0, ge=0)
     pin: Optional[str] = (
         None  # optional client-provided PIN; server will generate if missing
     )
@@ -35,6 +36,7 @@ class OrderResponse(BaseModel):
     status: str
     items: str
     amount: float
+    tip: float
     user_email: str
 
 
@@ -46,6 +48,7 @@ class OrderJoinResponse(BaseModel):
     status: str
     items: str
     amount: float
+    tip: float
     user_email: str
     pin: str
 
@@ -55,6 +58,7 @@ class MyOrderResponse(BaseModel):
     run_id: int
     items: str
     amount: float
+    tip: float
     status: str
     pin: str
 

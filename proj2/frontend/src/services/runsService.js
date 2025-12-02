@@ -56,10 +56,11 @@ export async function listAllRuns() {
   return fetchWithAuth('/runs');
 }
 
-export async function joinRun(runId, { items, amount }) {
+export async function joinRun(runId, { items, amount, tip = 0 }) {
+  const safeTip = Math.max(Number(tip) || 0, 0);
   return fetchWithAuth(`/runs/${runId}/orders`, {
     method: 'POST',
-    body: JSON.stringify({ items, amount })
+    body: JSON.stringify({ items, amount, tip: safeTip })
   });
 }
 
