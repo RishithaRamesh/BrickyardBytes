@@ -27,6 +27,7 @@ def _reload_app(tmp_path) -> TestClient:
         dbmod.ensure_user_points_column()
         dbmod.ensure_foodrun_capacity_column()
         dbmod.ensure_order_pin_column()
+        dbmod.ensure_foodrun_status_lowercase()
     except Exception:
         # Best-effort in tests; if something goes wrong, let the test run and fail
         pass

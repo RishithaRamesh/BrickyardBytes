@@ -176,3 +176,36 @@ def test_joined_history_includes_my_pin_and_runner_details_hide_pins(app_client)
     ).json()
     for o in details.get("orders", []):
         assert "pin" not in o
+
+
+def test_runner_sees_uppercase_active_runs_and_can_complete(app_client):
+    runner_token, _ = register_and_login(app_client, "case_runner@ncsu.edu")
+    run = create_run(app_client, runner_token, capacity=1)
+    run_id = run["id"]
+
+    # Simulate legacy data with mixed-case status
+    from sqlalchemy import text
+    from app import db as dbmod
+
+    with dbmod.engine.begin() as conn:
+        conn.execute(
+            text("UPDATE foodrun SET status=' Active  ' WHERE id=:rid"), {"rid": run_id}
+        )
+
+    mine = app_client.get(
+        "/runs/mine", headers={"Authorization": f"Bearer {runner_token}"}
+    ).json()
+    assert any(r["id"] == run_id for r in mine)
+
+    complete = app_client.put(
+        f"/runs/{run_id}/complete", headers={"Authorization": f"Bearer {runner_token}"}
+    )
+    assert complete.status_code == 200
+
+    history = app_client.get(
+        "/runs/mine/history", headers={"Authorization": f"Bearer {runner_token}"}
+    ).json()
+    assert any(
+        r["id"] == run_id and r["status"] == "completed"
+        for r in history
+    )

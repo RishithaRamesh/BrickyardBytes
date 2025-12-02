@@ -67,6 +67,22 @@ def ensure_order_pin_column() -> None:
         pass
 
 
+def ensure_foodrun_status_lowercase() -> None:
+    """Normalize legacy rows so status comparisons behave consistently."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE foodrun "
+                    "SET status = LOWER(TRIM(status)) "
+                    "WHERE status IS NOT NULL AND status != LOWER(TRIM(status))"
+                )
+            )
+    except Exception:
+        # Same posture as other ensure_* helpers: never block startup
+        pass
+
+
 # Dependency for FastAPI routes
 
 
