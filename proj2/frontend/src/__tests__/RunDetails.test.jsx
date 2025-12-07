@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import React from "react";
+import { MemoryRouter } from "react-router-dom";
 import RunDetails from "../pages/RunDetails";
 import {
   getRunById,
@@ -62,7 +63,11 @@ describe("RunDetails AI load estimate", () => {
     getRunLoadEstimate.mockResolvedValue({
       assessment: "Almost full; plan extra time.",
     });
-    render(<RunDetails />);
+    render(
+      <MemoryRouter>
+        <RunDetails />
+      </MemoryRouter>
+    );
 
     await waitFor(() => expect(getRunById).toHaveBeenCalled());
 
@@ -89,16 +94,18 @@ describe("RunDetails AI load estimate", () => {
 
   it("shows an error message if the load estimate fails", async () => {
     getRunLoadEstimate.mockRejectedValueOnce(new Error("network down"));
-    render(<RunDetails />);
+    render(
+      <MemoryRouter>
+        <RunDetails />
+      </MemoryRouter>
+    );
 
     await waitFor(() => expect(getRunById).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: /check load/i }));
 
     await waitFor(() =>
-      expect(
-        screen.getByText(/unable to fetch load estimate/i)
-      ).toBeInTheDocument()
+      expect(screen.getByText(/network down/i)).toBeInTheDocument()
     );
   });
 });
