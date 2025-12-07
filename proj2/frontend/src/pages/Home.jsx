@@ -3,7 +3,7 @@ import RunCard from "../components/RunCard";
 import Menu from "../components/Menu";
 import { useAuth } from '../hooks/useAuth';
 import menuData from "../mock_data/menuData.json";
-import { listAvailableRuns, listJoinedRuns, joinRun, unjoinRun } from "../services/runsService";
+import { listAvailableRuns, listJoinedRuns, joinRun, unjoinRun, getRunLoadEstimate } from "../services/runsService";
 import { useToast } from "../context/ToastContext";
 
 export default function Home() {
@@ -16,6 +16,8 @@ export default function Home() {
   const [activeRun, setActiveRun] = useState(null);
   const [activeMenuItems, setActiveMenuItems] = useState([]);
   const [pinVisible, setPinVisible] = useState({}); // map runId -> bool
+  const [loadInsights, setLoadInsights] = useState({});
+  const [loadInsightLoading, setLoadInsightLoading] = useState({});
   
 
   const DUMMY_MENU = [
@@ -43,8 +45,45 @@ export default function Home() {
       const [a, j] = await Promise.all([listAvailableRuns(), listJoinedRuns()]);
       setAvailable(a);
       setJoined(j);
+      setLoadInsights({});
+      setLoadInsightLoading({});
     } catch (e) {
       setError(e.message || "Failed to load runs");
+    }
+  }
+
+  async function handleLoadInsight(run, includeMyOrder = false) {
+    if (!run) return;
+    setLoadInsightLoading((prev) => ({ ...prev, [run.id]: true }));
+    const payload = {
+      restaurant: run.restaurant,
+      drop_point: run.drop_point,
+      eta: run.eta,
+      capacity: run.capacity,
+      seats_remaining: run.seats_remaining,
+      orders: [],
+    };
+    if (includeMyOrder && run.my_order) {
+      payload.orders = [
+        {
+          items: run.my_order.items,
+          amount: run.my_order.amount,
+        },
+      ];
+    }
+    try {
+      const res = await getRunLoadEstimate(payload);
+      setLoadInsights((prev) => ({
+        ...prev,
+        [run.id]: { text: res?.assessment || "No insight available.", error: false },
+      }));
+    } catch (e) {
+      setLoadInsights((prev) => ({
+        ...prev,
+        [run.id]: { text: (e.message || "Unable to fetch load estimate").replace(/\s*\(\d+\)$/, ""), error: true },
+      }));
+    } finally {
+      setLoadInsightLoading((prev) => ({ ...prev, [run.id]: false }));
     }
   }
 
@@ -107,6 +146,9 @@ export default function Home() {
                   run={run}
                   onJoin={handleJoinClick}
                   joinedRuns={joined}
+                  onCheckLoad={() => handleLoadInsight(run)}
+                  loadInsight={loadInsights[run.id]}
+                  loadLoading={!!loadInsightLoading[run.id]}
                 />
               ))
             ) : (
@@ -160,6 +202,24 @@ export default function Home() {
                         <strong>Your tip:</strong> ${Number(run.my_order.tip).toFixed(2)}
                       </p>
                     )}
+                    <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => handleLoadInsight(run, true)}
+                        disabled={!!loadInsightLoading[run.id]}
+                      >
+                        {loadInsightLoading[run.id] ? "Analyzing..." : "Check load"}
+                      </button>
+                      {loadInsights[run.id]?.text && (
+                        <p
+                          style={{ margin: 0 }}
+                          className={loadInsights[run.id].error ? "form-error" : ""}
+                        >
+                          {loadInsights[run.id].text}
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <div className="run-card-footer">
                     <button className="btn btn-secondary" disabled>
