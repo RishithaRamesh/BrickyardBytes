@@ -99,3 +99,10 @@ export async function getRunDescriptionSuggestion({ restaurant, drop_point, eta 
     body: JSON.stringify({ restaurant, drop_point, eta })
   });
 }
+
+export async function getRunLoadEstimate(payload) {
+  return fetchWithAuth('/ai/run-load', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
