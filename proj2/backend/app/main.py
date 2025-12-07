@@ -30,6 +30,8 @@ from .schemas import (
     PinVerifyRequest,
     RunDescriptionRequest,
     RunDescriptionResponse,
+    RunLoadRequest,
+    RunLoadResponse,
 )
 from .auth import (
     get_password_hash,
@@ -50,6 +52,52 @@ def build_default_run_description(restaurant: str, drop_point: str, eta: str) ->
         f"Heading to {restaurant_text} around {eta_text}; "
         f"meet me at {drop_text} if you want me to grab something."
     )
+
+
+def build_default_run_load_assessment(payload: RunLoadRequest) -> str:
+    """Heuristic summary when AI is unavailable."""
+    orders = payload.orders or []
+    total_orders = len(orders)
+    capacity = payload.capacity or max(total_orders, 1)
+    seats_remaining = (
+        payload.seats_remaining
+        if payload.seats_remaining is not None
+        else max(capacity - total_orders, 0)
+    )
+    heavy_keywords = (
+        "platter",
+        "party",
+        "catering",
+        "family",
+        "combo",
+        "tray",
+        "box",
+    )
+    heavy_orders = sum(
+        1
+        for order in orders
+        if any(kw in (order.items or "").lower() for kw in heavy_keywords)
+    )
+    pricey_orders = sum(1 for order in orders if (order.amount or 0) >= 25)
+    complex_orders = heavy_orders + pricey_orders
+
+    if total_orders == 0:
+        return "No orders yet; the run is currently light."
+
+    if seats_remaining <= 0:
+        load_text = "Run is at capacity"
+    elif seats_remaining <= 1:
+        load_text = "Almost full"
+    else:
+        load_text = "Plenty of room remaining"
+
+    if complex_orders >= max(1, total_orders // 2):
+        return f"{load_text}, but several items look prep-heavy—plan extra pickup time."
+
+    if total_orders >= capacity * 0.8:
+        return f"{load_text}; total orders ({total_orders}) are close to capacity ({capacity})."
+
+    return f"{load_text}; {total_orders} order(s) look manageable right now."
 
 
 @asynccontextmanager
@@ -141,6 +189,79 @@ def generate_run_description(
     except Exception:
         # gracefully fallback to deterministic copy
         return {"suggestion": default_suggestion}
+
+
+@app.post("/ai/run-load", response_model=RunLoadResponse)
+def estimate_run_load(
+    payload: RunLoadRequest, claims=Depends(get_current_user_claims)
+):
+    # require auth; we just need a valid token
+    _ = claims
+    default_assessment = build_default_run_load_assessment(payload)
+    api_key = os.getenv("AI_RUN_DESC_KEY")
+    api_url = os.getenv(
+        "AI_RUN_DESC_URL", "https://api.openai.com/v1/chat/completions"
+    )
+    model = os.getenv("AI_RUN_DESC_MODEL", "gpt-4o-mini")
+    if not api_key:
+        return {"assessment": default_assessment}
+
+    order_lines = "\n".join(
+        f"- ${order.amount:.2f}: {order.items}"
+        if order.amount is not None
+        else f"- {order.items}"
+        for order in (payload.orders or [])
+    ) or "No orders yet."
+
+    try:
+        response = httpx.post(
+            api_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You help student food runners gauge workload. "
+                            "Respond with a single, direct sentence under 35 words."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Assess whether this food run looks manageable or risky. "
+                            "Highlight prep complexity or if they should cap the run.\n"
+                            f"Restaurant: {payload.restaurant or ''}\n"
+                            f"Drop point: {payload.drop_point or ''}\n"
+                            f"ETA: {payload.eta or ''}\n"
+                            f"Capacity: {payload.capacity or ''}\n"
+                            f"Seats remaining: {payload.seats_remaining if payload.seats_remaining is not None else ''}\n"
+                            f"Orders:\n{order_lines}"
+                        ),
+                    },
+                ],
+                "temperature": 0.3,
+                "max_tokens": 80,
+            },
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+        assessment = (
+            data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        )
+        if not assessment:
+            raise ValueError("Empty AI response")
+        return {"assessment": assessment}
+    except Exception:
+        return {"assessment": default_assessment}
 
 
 @app.post("/auth/register", response_model=AuthResponse)
