@@ -7,42 +7,91 @@ const fallbackHotspots = [
   { name: 'EB2 Atrium', tip: 'Engineering students often stage drop-offs near the EBII Lobby.' },
 ];
 
+const STORAGE_KEY = 'hotspotChatHistory';
+
+function ensureMessagePayload(payload) {
+  if (!payload) return { text: "I'm not sure yet — try asking about hotspots, seats, or broadcasts." };
+  if (typeof payload === 'string') return { text: payload };
+  return payload;
+}
+
+function formatRunCard(run) {
+  if (!run) return null;
+  const restaurant = run.restaurant || 'Unknown spot';
+  const dropPoint = run.drop_point || 'Drop TBD';
+  const filled = Math.max((Number(run.capacity) || 0) - (Number(run.seats_remaining) || 0), 0);
+  const seats = Number(run.seats_remaining) ?? 0;
+  return {
+    id: run.id,
+    title: `${restaurant} → ${dropPoint}`,
+    subtitle: `ETA ${run.eta || 'TBD'}`,
+    detail: `${filled} joined · ${seats} seat${seats === 1 ? '' : 's'} left`,
+  };
+}
+
 function describeRunInsights(runs = []) {
   if (!Array.isArray(runs) || runs.length === 0) {
-    return 'No live runs right now. I will stick with campus presets until a runner goes active.';
+    return {
+      text: 'No live runs right now. I will stick with campus presets until a runner goes active.',
+    };
   }
-  const openSeats = runs.reduce(
-    (sum, run) => sum + (Number(run?.seats_remaining) || 0),
-    0
+  const totals = runs.reduce(
+    (acc, run) => {
+      const seats = Number(run?.seats_remaining) || 0;
+      const cap = Number(run?.capacity) || 0;
+      acc.openSeats += seats;
+      acc.joined += Math.max(cap - seats, 0);
+      return acc;
+    },
+    { openSeats: 0, joined: 0 }
   );
   const dropCounts = runs.reduce((acc, run) => {
-    const drop = run?.drop_point?.trim() || 'Drop TBD';
-    acc[drop] = (acc[drop] || 0) + 1;
+    const label = run?.drop_point?.trim() || 'Drop TBD';
+    const key = label.toLowerCase();
+    acc[key] = acc[key] || { count: 0, label };
+    acc[key].count += 1;
     return acc;
   }, {});
-  const [topDropName, topDropCount] =
-    Object.entries(dropCounts).sort((a, b) => b[1] - a[1])[0] || [];
+  const topDropEntry =
+    Object.values(dropCounts).sort((a, b) => b.count - a.count)[0] || null;
   const soonestRun =
     [...runs].sort((a, b) => {
       const aEta = `${a?.eta || ''}`;
       const bEta = `${b?.eta || ''}`;
       return aEta.localeCompare(bEta);
     })[0] || {};
-  const soonestText = soonestRun?.restaurant
-    ? `${soonestRun.restaurant} → ${soonestRun.drop_point} at ${
-        soonestRun.eta || 'TBD'
-      }`
-    : 'Waiting for the next ETA';
-  const busiestText = topDropName
-    ? `${topDropName} (${topDropCount} run${
-        topDropCount === 1 ? '' : 's'
-      } live)`
-    : 'Still gathering venues';
-  return (
-    `Live snapshot: ${runs.length} runs • ${openSeats} open seats.\n` +
-    `Busiest drop: ${busiestText}.\n` +
-    `Soonest departure: ${soonestText}.`
-  );
+  const fillRate =
+    totals.joined + totals.openSeats === 0
+      ? 0
+      : (totals.joined / (totals.joined + totals.openSeats)) * 100;
+  const text =
+    `Live snapshot: ${runs.length} runs | fill ${fillRate.toFixed(0)}% | ${totals.openSeats} seats open.\n` +
+    `Busiest drop: ${
+      topDropEntry?.label || 'collecting data'
+    } (${topDropEntry?.count || 0} run${
+      topDropEntry?.count === 1 ? '' : 's'
+    }).\n` +
+    `Soonest departure: ${
+      soonestRun?.restaurant
+        ? `${soonestRun.restaurant} → ${soonestRun.drop_point} at ${soonestRun.eta || 'TBD'}`
+        : 'Waiting for the next ETA'
+    }.`;
+  return {
+    text,
+    cards: [...runs]
+      .sort(
+        (a, b) => {
+          const bFill =
+            (Number(b?.capacity) || 0) - (Number(b?.seats_remaining) || 0);
+          const aFill =
+            (Number(a?.capacity) || 0) - (Number(a?.seats_remaining) || 0);
+          return bFill - aFill;
+        }
+      )
+      .slice(0, 3)
+      .map(formatRunCard)
+      .filter(Boolean),
+  };
 }
 
 function describeLowSeatRuns(runs = []) {
@@ -50,25 +99,27 @@ function describeLowSeatRuns(runs = []) {
     .filter((run) => Number(run?.seats_remaining) <= 1)
     .slice(0, 3);
   if (!urgent.length) {
-    return 'No runs are near capacity right now. Plenty of seats if you hop in soon!';
+    return {
+      text: 'No runs are near capacity right now. Plenty of seats if you hop in soon!',
+    };
   }
-  const lines = urgent.map(
-    (run) =>
-      `${run.restaurant} near ${run.drop_point} — ${run.seats_remaining} seat left`
-  );
-  return `These runs are almost full:\n${lines.join('\n')}`;
+  return {
+    text: 'These runs are almost full — grab a seat quickly:',
+    cards: urgent.map(formatRunCard).filter(Boolean),
+  };
 }
 
 function describeBroadcastIdeas(runs = []) {
-  const hotspots = buildHotspotSummary(runs).slice(0, 2);
+  const hotspots = buildHotspotSummary(runs).slice(0, 3);
   const preview = hotspots
     .map((spot, idx) => `${idx + 1}. ${spot.name} — ${spot.tip}`)
     .join('\n');
-  return (
-    'Broadcast game-plan:\n' +
-    `${preview}\n` +
-    'Hardcoded tip: rotate between a busy academic core (Talley/Hunt) and a residence-heavy zone (Wolf Ridge) to catch both study and dinner crowds.'
-  );
+  return {
+    text:
+      'Broadcast game-plan:\n' +
+      `${preview}\n` +
+      'Hardcoded tip: rotate between a study core (Talley/Hunt) and residence-heavy zone (Wolf Ridge) to catch both lunch and dinner traffic.',
+  };
 }
 
 const quickActions = [
@@ -80,6 +131,11 @@ const quickActions = [
     buildMessage: describeBroadcastIdeas,
   },
 ];
+
+const defaultGreeting = {
+  from: 'ai',
+  text: 'Hi! I am your campus-run scout. Ask about hotspots or drop points.',
+};
 
 function buildHotspotSummary(availableRuns = []) {
   if (!Array.isArray(availableRuns) || availableRuns.length === 0) {
@@ -100,48 +156,103 @@ function buildHotspotSummary(availableRuns = []) {
   return grouped.length ? grouped : fallbackHotspots;
 }
 
+function findMatchingRun(cleaned, availableRuns = []) {
+  if (!cleaned || !Array.isArray(availableRuns)) return null;
+  const normalized = cleaned.toLowerCase();
+  return (
+    availableRuns.find((run) => {
+      const restaurant = `${run?.restaurant || ''}`.toLowerCase();
+      const drop = `${run?.drop_point || ''}`.toLowerCase();
+      return restaurant && normalized.includes(restaurant);
+    }) ||
+    availableRuns.find((run) => {
+      const drop = `${run?.drop_point || ''}`.toLowerCase();
+      return drop && normalized.includes(drop);
+    }) ||
+    null
+  );
+}
+
 function craftAiResponse(message, availableRuns) {
   const cleaned = (message || '').toLowerCase();
   const hotspots = buildHotspotSummary(availableRuns);
   if (!cleaned.trim()) {
-    return 'Try asking me about hotspots or where the next runs are happening!';
+    return ensureMessagePayload({
+      text: 'Try asking me about hotspots, seat alerts, or broadcast strategies — or use the quick buttons below.',
+    });
+  }
+  const targetedRun = findMatchingRun(cleaned, availableRuns);
+  if (targetedRun) {
+    return ensureMessagePayload({
+      text: `Here is the live scoop on ${targetedRun.restaurant} near ${targetedRun.drop_point}:`,
+      cards: [formatRunCard(targetedRun)].filter(Boolean),
+    });
   }
   if (
     cleaned.includes('insight') ||
     cleaned.includes('stat') ||
     cleaned.includes('summary')
   ) {
-    return describeRunInsights(availableRuns);
+    return ensureMessagePayload(describeRunInsights(availableRuns));
   }
   if (cleaned.includes('seat') || cleaned.includes('full') || cleaned.includes('capacity')) {
-    return describeLowSeatRuns(availableRuns);
+    return ensureMessagePayload(describeLowSeatRuns(availableRuns));
   }
   if (cleaned.includes('hotspot') || cleaned.includes('where') || cleaned.includes('run')) {
     const previews = hotspots
       .slice(0, 3)
       .map((spot, idx) => `${idx + 1}. ${spot.name} — ${spot.tip}`)
       .join('\n');
-    return `Here are some run hotspots right now:\n${previews}`;
+    return ensureMessagePayload({
+      text: `Here are some run hotspots right now:\n${previews}`,
+    });
   }
   if (cleaned.includes('broadcast') || cleaned.includes('tip')) {
-    return describeBroadcastIdeas(availableRuns);
+    return ensureMessagePayload(describeBroadcastIdeas(availableRuns));
   }
   if (cleaned.includes('thanks') || cleaned.includes('thank')) {
-    return "Happy to help! Ping me anytime you're scouting for drop points.";
+    return ensureMessagePayload({
+      text: "Happy to help! Ping me anytime you're scouting for drop points.",
+    });
   }
   if (cleaned.includes('suggest') || cleaned.includes('idea')) {
-    return 'If you want to broadcast, target areas with study spaces (Hunt, Talley) or dorm clusters (Wolf Ridge).';
+    return ensureMessagePayload({
+      text: 'If you want to broadcast, target areas with study spaces (Hunt, Talley) or dorm clusters (Wolf Ridge).',
+    });
   }
-  return "I'm tuned for BrickyardBytes chatter. Ask about hotspots, drop points, or good places to broadcast!";
+  return ensureMessagePayload({
+    text: "I'm tuned for BrickyardBytes chatter. Want hotspots, seat alerts, or promo tips? I can also break down a specific run if you mention it by name.",
+  });
 }
 
 export default function HotspotChat({ availableRuns }) {
-  const [messages, setMessages] = useState([
-    { from: 'ai', text: 'Hi! I am your campus-run scout. Ask about hotspots or drop points.' },
-  ]);
+  const [messages, setMessages] = useState([defaultGreeting]);
   const [input, setInput] = useState('');
   const [runsSnapshot, setRunsSnapshot] = useState(availableRuns || []);
   const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(parsed) && parsed.length) {
+        setMessages(parsed);
+      }
+    } catch {
+      // ignore storage read failures
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const trimmed = messages.slice(-20);
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+    } catch {
+      // ignore storage write failures
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (availableRuns) {
@@ -175,12 +286,17 @@ export default function HotspotChat({ availableRuns }) {
   const hotspots = useMemo(() => buildHotspotSummary(runsSnapshot), [runsSnapshot]);
 
   const handleActionClick = (action) => {
-    const aiReply = action.buildMessage(runsSnapshot);
+    const aiReply = ensureMessagePayload(action.buildMessage(runsSnapshot));
     setMessages((prev) => [
       ...prev,
       { from: 'user', text: `[Button] ${action.label}` },
-      { from: 'ai', text: aiReply },
+      { from: 'ai', ...aiReply },
     ]);
+  };
+
+  const handleRunCardClick = (card) => {
+    if (!card || !card.id || typeof window === 'undefined') return;
+    window.open(`/runs/${card.id}`, '_blank', 'noopener');
   };
 
   const sendMessage = (evt) => {
@@ -190,7 +306,7 @@ export default function HotspotChat({ availableRuns }) {
     setMessages((prev) => [
       ...prev,
       ...(trimmed ? [{ from: 'user', text: trimmed }] : []),
-      { from: 'ai', text: aiReply },
+      { from: 'ai', ...aiReply },
     ]);
     setInput('');
   };
@@ -219,6 +335,25 @@ export default function HotspotChat({ availableRuns }) {
             {msg.text.split('\n').map((line, lineIdx) => (
               <span key={lineIdx}>{line}</span>
             ))}
+            {Array.isArray(msg.cards) && msg.cards.length > 0 && (
+              <div className="chatbot-message__cards">
+                {msg.cards.map((card) => (
+                  <button
+                    key={`${card.id}-${card.title}`}
+                    type="button"
+                    className="chatbot-message-card"
+                    onClick={() => handleRunCardClick(card)}
+                  >
+                    <span className="chatbot-message-card__title">{card.title}</span>
+                    <span className="chatbot-message-card__subtitle">{card.subtitle}</span>
+                    <span className="chatbot-message-card__detail">{card.detail}</span>
+                    <span className="chatbot-message-card__cta">
+                      View run ↗
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
