@@ -259,6 +259,11 @@ VITE_API_BASE=http://localhost:5050
 - Configure `.env` with an OpenAI-compatible endpoint (defaults shown in `.env.example`): set `AI_RUN_DESC_KEY` to your API key, and optionally override `AI_RUN_DESC_URL` and `AI_RUN_DESC_MODEL`.
 - If keys are missing or the provider fails, the API falls back to a deterministic, non-AI string so the UI still shows helpful copy.
 
+### AI load estimator
+- Runners can request `POST /ai/run-load` with the active run context (restaurant, capacity, seats remaining, and a lightweight description of each order). The endpoint returns `{ assessment }`, a short workload advisory.
+- The frontend surfaces this inside Run Details → “AI Load Estimate”, giving runners a one-click check on whether the current queue still looks manageable.
+- It reuses the same `AI_RUN_DESC_*` settings; if no key is present the backend returns a heuristic, rule-based assessment instead of calling an external model.
+
 ### Troubleshooting
 - Vite error about Node version: install Node 20.19+ or 22.12+.
 - Browser "Failed to fetch": backend not running, wrong port in `.env`, or CORS mismatch—check Network tab and `CORS_ORIGINS`.
