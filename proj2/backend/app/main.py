@@ -14,7 +14,6 @@ from .db import (
     get_session,
     ensure_user_points_column,
     ensure_foodrun_capacity_column,
-    ensure_foodrun_description_column,
     ensure_order_pin_column,
     ensure_order_tip_column,
     ensure_foodrun_status_lowercase,
@@ -34,6 +33,8 @@ from .schemas import (
     PinVerifyRequest,
     RunDescriptionRequest,
     RunDescriptionResponse,
+    RunLoadRequest,
+    RunLoadResponse,
 )
 from .auth import (
     get_password_hash,
@@ -72,13 +73,50 @@ def build_default_run_description(restaurant: str, drop_point: str, eta: str) ->
     )
 
 
-def resolve_run_description(
-    restaurant: str | None, drop_point: str | None, eta: str | None, description: str | None
-) -> str:
-    text = (description or "").strip()
-    if text:
-        return text
-    return build_default_run_description(restaurant or "", drop_point or "", eta or "")
+def build_default_run_load_assessment(payload: RunLoadRequest) -> str:
+    """Heuristic summary when AI is unavailable."""
+    orders = payload.orders or []
+    total_orders = len(orders)
+    capacity = payload.capacity or max(total_orders, 1)
+    seats_remaining = (
+        payload.seats_remaining
+        if payload.seats_remaining is not None
+        else max(capacity - total_orders, 0)
+    )
+    heavy_keywords = (
+        "platter",
+        "party",
+        "catering",
+        "family",
+        "combo",
+        "tray",
+        "box",
+    )
+    heavy_orders = sum(
+        1
+        for order in orders
+        if any(kw in (order.items or "").lower() for kw in heavy_keywords)
+    )
+    pricey_orders = sum(1 for order in orders if (order.amount or 0) >= 25)
+    complex_orders = heavy_orders + pricey_orders
+
+    if total_orders == 0:
+        return "No orders yet; the run is currently light."
+
+    if seats_remaining <= 0:
+        load_text = "Run is at capacity"
+    elif seats_remaining <= 1:
+        load_text = "Almost full"
+    else:
+        load_text = "Plenty of room remaining"
+
+    if complex_orders >= max(1, total_orders // 2):
+        return f"{load_text}, but several items look prep-heavy—plan extra pickup time."
+
+    if total_orders >= capacity * 0.8:
+        return f"{load_text}; total orders ({total_orders}) are close to capacity ({capacity})."
+
+    return f"{load_text}; {total_orders} order(s) look manageable right now."
 
 
 @asynccontextmanager
@@ -88,7 +126,6 @@ async def lifespan(app: FastAPI):
     # Ensure SQLite dev DBs have newly added columns (e.g., 'points')
     ensure_user_points_column()
     ensure_foodrun_capacity_column()
-    ensure_foodrun_description_column()
     ensure_order_pin_column()
     ensure_order_tip_column()
     ensure_foodrun_status_lowercase()
@@ -175,6 +212,79 @@ def generate_run_description(
         return {"suggestion": default_suggestion}
 
 
+@app.post("/ai/run-load", response_model=RunLoadResponse)
+def estimate_run_load(
+    payload: RunLoadRequest, claims=Depends(get_current_user_claims)
+):
+    # require auth; we just need a valid token
+    _ = claims
+    default_assessment = build_default_run_load_assessment(payload)
+    api_key = os.getenv("AI_RUN_DESC_KEY")
+    api_url = os.getenv(
+        "AI_RUN_DESC_URL", "https://api.openai.com/v1/chat/completions"
+    )
+    model = os.getenv("AI_RUN_DESC_MODEL", "gpt-4o-mini")
+    if not api_key:
+        return {"assessment": default_assessment}
+
+    order_lines = "\n".join(
+        f"- ${order.amount:.2f}: {order.items}"
+        if order.amount is not None
+        else f"- {order.items}"
+        for order in (payload.orders or [])
+    ) or "No orders yet."
+
+    try:
+        response = httpx.post(
+            api_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You help student food runners gauge workload. "
+                            "Respond with a single, direct sentence under 35 words."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Assess whether this food run looks manageable or risky. "
+                            "Highlight prep complexity or if they should cap the run.\n"
+                            f"Restaurant: {payload.restaurant or ''}\n"
+                            f"Drop point: {payload.drop_point or ''}\n"
+                            f"ETA: {payload.eta or ''}\n"
+                            f"Capacity: {payload.capacity or ''}\n"
+                            f"Seats remaining: {payload.seats_remaining if payload.seats_remaining is not None else ''}\n"
+                            f"Orders:\n{order_lines}"
+                        ),
+                    },
+                ],
+                "temperature": 0.3,
+                "max_tokens": 80,
+            },
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+        assessment = (
+            data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        )
+        if not assessment:
+            raise ValueError("Empty AI response")
+        return {"assessment": assessment}
+    except Exception:
+        return {"assessment": default_assessment}
+
+
 @app.post("/auth/register", response_model=AuthResponse)
 def register(payload: AuthRequest, session: Session = Depends(get_session)):
     # Enforce NCSU email domain for registration
@@ -244,14 +354,7 @@ def create_run(
     session: Session = Depends(get_session),
 ):
     user_id = int(claims["sub"])
-    payload = run.model_dump()
-    payload["description"] = resolve_run_description(
-        payload.get("restaurant"),
-        payload.get("drop_point"),
-        payload.get("eta"),
-        payload.get("description"),
-    )
-    food_run = FoodRun(**payload, runner_id=user_id)
+    food_run = FoodRun(**run.model_dump(), runner_id=user_id)
     food_run.status = normalize_status(food_run.status)
     session.add(food_run)
     session.commit()
@@ -270,13 +373,9 @@ def create_run(
             "eta",
             "capacity",
             "status",
-            "description",
         }
     )
     base["status"] = normalize_status(base.get("status"))
-    base["description"] = resolve_run_description(
-        base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
-    )
     return {
         **base,
         "runner_username": claims.get("email", str(user_id)),
@@ -308,13 +407,9 @@ def list_runs(
                 "eta",
                 "capacity",
                 "status",
-                "description",
             }
         )
         base["status"] = normalize_status(base.get("status"))
-        base["description"] = resolve_run_description(
-            base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
-        )
         responses.append(
             {
                 **base,
@@ -375,8 +470,8 @@ def create_order(
         "status": order_row.status,
         "items": order_row.items,
         "amount": order_row.amount,
-        "tip": order_row.tip,
         "user_email": u.email if u else str(user_id),
+        "tip": float(order_row.tip or 0),
         "pin": pin,
     }
 
@@ -435,13 +530,11 @@ def list_available_runs(
     claims=Depends(get_current_user_claims), session: Session = Depends(get_session)
 ):
     user_id = int(claims["sub"])
-    runs = session.exec(
-        select(FoodRun).where(
-            active_status_expr() == ACTIVE_STATUS, FoodRun.runner_id != user_id
-        )
-    ).all()
+    runs = session.exec(select(FoodRun).where(FoodRun.runner_id != user_id)).all()
     responses = []
     for r in runs:
+        if not is_active_status(r.status):
+            continue
         count = session.exec(
             select(Order).where(Order.run_id == r.id, Order.status != "cancelled")
         ).all()
@@ -457,13 +550,9 @@ def list_available_runs(
                     "eta",
                     "capacity",
                     "status",
-                    "description",
                 }
             )
             base["status"] = normalize_status(base.get("status"))
-            base["description"] = resolve_run_description(
-                base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
-            )
             responses.append(
                 {
                     **base,
@@ -480,14 +569,11 @@ def list_my_runs(
     claims=Depends(get_current_user_claims), session: Session = Depends(get_session)
 ):
     user_id = int(claims["sub"])
-    runs = session.exec(
-        select(FoodRun).where(
-            FoodRun.runner_id == user_id,
-            active_status_expr() == ACTIVE_STATUS,
-        )
-    ).all()
+    runs = session.exec(select(FoodRun).where(FoodRun.runner_id == user_id)).all()
     responses = []
     for r in runs:
+        if not is_active_status(r.status):
+            continue
         orders = session.exec(
             select(Order).where(Order.run_id == r.id, Order.status != "cancelled")
         ).all()
@@ -505,7 +591,7 @@ def list_my_runs(
                     "status": o.status,
                     "items": o.items,
                     "amount": o.amount,
-                    "tip": o.tip,
+                    "tip": float(o.tip or 0),
                     "user_email": u.email if u else str(o.user_id),
                 }
             )
@@ -518,13 +604,9 @@ def list_my_runs(
                 "eta",
                 "capacity",
                 "status",
-                "description",
             }
         )
         base["status"] = normalize_status(base.get("status"))
-        base["description"] = resolve_run_description(
-            base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
-        )
         responses.append(
             {
                 **base,
@@ -566,7 +648,7 @@ def get_run_details(
                 "status": o.status,
                 "items": o.items,
                 "amount": o.amount,
-                "tip": o.tip,
+                "tip": float(o.tip or 0),
                 "user_email": u.email if u else str(o.user_id),
             }
         )
@@ -580,13 +662,9 @@ def get_run_details(
             "eta",
             "capacity",
             "status",
-            "description",
         }
     )
     base["status"] = normalize_status(base.get("status"))
-    base["description"] = resolve_run_description(
-        base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
-    )
     return {
         **base,
         "runner_username": runner.email if runner else str(run.runner_id),
@@ -615,12 +693,12 @@ def list_joined_runs(
     if not run_ids:
         return []
     runs = session.exec(
-        select(FoodRun).where(
-            FoodRun.id.in_(run_ids), active_status_expr() == ACTIVE_STATUS
-        )
+        select(FoodRun).where(FoodRun.id.in_(run_ids))
     ).all()
     responses = []
     for r in runs:
+        if not is_active_status(r.status):
+            continue
         count = session.exec(
             select(Order).where(Order.run_id == r.id, Order.status != "cancelled")
         ).all()
@@ -636,7 +714,6 @@ def list_joined_runs(
             )
         ).first()
         # Build explicit payload to avoid any None values breaking response validation
-        description = resolve_run_description(r.restaurant, r.drop_point, r.eta, r.description)
         payload = {
             "id": r.id,
             "runner_id": r.runner_id,
@@ -648,7 +725,6 @@ def list_joined_runs(
             "runner_username": runner.email if runner else str(r.runner_id),
             "seats_remaining": seats_remaining,
             "orders": [],
-            "description": description,
         }
         if mine:
             payload["my_order"] = {
@@ -656,9 +732,9 @@ def list_joined_runs(
                 "run_id": mine.run_id,
                 "items": mine.items,
                 "amount": mine.amount,
-                "tip": mine.tip,
                 "status": mine.status,
                 "pin": mine.pin or "",
+                "tip": float(mine.tip or 0),
             }
         responses.append(payload)
     return responses
@@ -669,14 +745,11 @@ def list_my_runs_history(
     claims=Depends(get_current_user_claims), session: Session = Depends(get_session)
 ):
     user_id = int(claims["sub"])
-    runs = session.exec(
-        select(FoodRun).where(
-            FoodRun.runner_id == user_id,
-            active_status_expr() != ACTIVE_STATUS,
-        ).order_by(FoodRun.created_at.desc(), FoodRun.id.desc())
-    ).all()
+    runs = session.exec(select(FoodRun).where(FoodRun.runner_id == user_id)).all()
     responses = []
     for r in runs:
+        if is_active_status(r.status):
+            continue
         orders = session.exec(select(Order).where(Order.run_id == r.id)).all()
         runner = session.get(User, r.runner_id)
         order_payload = []
@@ -690,7 +763,7 @@ def list_my_runs_history(
                     "status": o.status,
                     "items": o.items,
                     "amount": o.amount,
-                    "tip": o.tip,
+                    "tip": float(o.tip or 0),
                     "user_email": u.email if u else str(o.user_id),
                 }
             )
@@ -703,13 +776,9 @@ def list_my_runs_history(
                 "eta",
                 "capacity",
                 "status",
-                "description",
             }
         )
         base["status"] = normalize_status(base.get("status"))
-        base["description"] = resolve_run_description(
-            base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
-        )
         responses.append(
             {
                 **base,
@@ -718,6 +787,7 @@ def list_my_runs_history(
                 "orders": order_payload,
             }
         )
+    responses.sort(key=lambda r: r["id"], reverse=True)
     return responses
 
 
@@ -732,12 +802,12 @@ def list_joined_runs_history(
     if not run_ids:
         return []
     runs = session.exec(
-        select(FoodRun).where(
-            FoodRun.id.in_(run_ids), active_status_expr() != ACTIVE_STATUS
-        ).order_by(FoodRun.created_at.desc(), FoodRun.id.desc())
+        select(FoodRun).where(FoodRun.id.in_(run_ids))
     ).all()
     responses = []
     for r in runs:
+        if is_active_status(r.status):
+            continue
         runner = session.get(User, r.runner_id)
         # include my_order for historical reference
         mine = session.exec(
@@ -755,12 +825,7 @@ def list_joined_runs_history(
                 "eta",
                 "capacity",
                 "status",
-                "description",
             }
-        )
-        base["status"] = normalize_status(base.get("status"))
-        base["description"] = resolve_run_description(
-            base.get("restaurant"), base.get("drop_point"), base.get("eta"), base.get("description")
         )
         payload = {
             **base,
@@ -768,17 +833,19 @@ def list_joined_runs_history(
             "seats_remaining": 0,
             "orders": [],
         }
+        payload["status"] = normalize_status(payload.get("status"))
         if mine:
             payload["my_order"] = {
                 "id": mine.id,
                 "run_id": mine.run_id,
                 "items": mine.items,
                 "amount": mine.amount,
-                "tip": mine.tip,
                 "status": mine.status,
                 "pin": (mine.pin or ""),
+                "tip": float(mine.tip or 0),
             }
         responses.append(payload)
+    responses.sort(key=lambda r: r["id"], reverse=True)
     return responses
 
 
@@ -795,7 +862,7 @@ def runner_remove_order(
         raise HTTPException(status_code=404, detail="Run not found")
     if run.runner_id != user_id:
         raise HTTPException(status_code=403, detail="Not authorized")
-    if not is_active_status(run.status):
+    if run.status != "active":
         raise HTTPException(status_code=400, detail="Run is not active")
     ord = session.get(Order, order_id)
     if not ord or ord.run_id != run_id or ord.status == "cancelled":
@@ -817,8 +884,6 @@ def complete_run(
         raise HTTPException(status_code=404, detail="Run not found")
     if food_run.runner_id != user_id:
         raise HTTPException(status_code=403, detail="Not authorized")
-    if not is_active_status(food_run.status):
-        raise HTTPException(status_code=400, detail="Run is not active")
 
     # Calculate total bill and points
     orders = session.exec(select(Order).where(Order.run_id == run_id)).all()

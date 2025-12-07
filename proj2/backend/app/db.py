@@ -100,29 +100,22 @@ def ensure_order_tip_column() -> None:
                 conn.execute(
                     text("ALTER TABLE 'order' ADD COLUMN tip REAL DEFAULT 0.0")
                 )
-            conn.execute(
-                text(
-                    "UPDATE 'order' SET tip = 0 WHERE tip IS NULL OR NOT (tip >= 0)"
-                )
-            )
     except Exception:
-        # Same forgiving posture—never block startup for dev schemas
         pass
 
 
 def ensure_foodrun_status_lowercase() -> None:
-    """Normalize legacy rows so status comparisons behave consistently."""
     try:
+        if not DATABASE_URL.startswith("sqlite"):
+            return
         with engine.begin() as conn:
             conn.execute(
                 text(
-                    "UPDATE foodrun "
-                    "SET status = LOWER(TRIM(status)) "
-                    "WHERE status IS NOT NULL AND status != LOWER(TRIM(status))"
+                    "UPDATE foodrun SET status=LOWER(TRIM(status)) "
+                    "WHERE status IS NOT NULL"
                 )
             )
     except Exception:
-        # Same posture as other ensure_* helpers: never block startup
         pass
 
 

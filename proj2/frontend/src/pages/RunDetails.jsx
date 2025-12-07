@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { getRunById, removeOrder, completeRun, cancelRun, verifyOrderPin } from "../services/runsService";
+import { getRunById, removeOrder, completeRun, cancelRun, verifyOrderPin, getRunLoadEstimate } from "../services/runsService";
 import { useToast } from "../context/ToastContext";
 
 export default function RunDetails() {
@@ -13,12 +13,17 @@ export default function RunDetails() {
   const [verifyingId, setVerifyingId] = useState(null);
   const [pinValue, setPinValue] = useState("");
   const [showPin, setShowPin] = useState(false);
+  const [loadAssessment, setLoadAssessment] = useState("");
+  const [loadAssessmentError, setLoadAssessmentError] = useState("");
+  const [loadAssessmentLoading, setLoadAssessmentLoading] = useState(false);
 
   async function load() {
     setError("");
     try {
       const data = await getRunById(id);
       setRun(data);
+      setLoadAssessment("");
+      setLoadAssessmentError("");
     } catch (e) {
       setError(e.message || "Failed to load run");
     }
@@ -40,6 +45,34 @@ export default function RunDetails() {
       setError(e.message || "Failed to remove order");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleLoadAssessment() {
+    if (!run) return;
+    setLoadAssessment("");
+    setLoadAssessmentError("");
+    setLoadAssessmentLoading(true);
+    try {
+      const res = await getRunLoadEstimate({
+        restaurant: run.restaurant,
+        drop_point: run.drop_point,
+        eta: run.eta,
+        capacity: run.capacity,
+        seats_remaining: run.seats_remaining,
+        orders: Array.isArray(run.orders)
+          ? run.orders.map((o) => ({
+              items: o.items,
+              amount: o.amount,
+            }))
+          : [],
+      });
+      setLoadAssessment(res?.assessment || "");
+    } catch (e) {
+      const msg = (e.message || "Unable to fetch load estimate").replace(/\s*\(\d+\)$/, "");
+      setLoadAssessmentError(msg);
+    } finally {
+      setLoadAssessmentLoading(false);
     }
   }
 
@@ -101,12 +134,34 @@ export default function RunDetails() {
           <div className="run-card-body">
             <p><strong>Status:</strong> {run.status}</p>
             <p><strong>Drop:</strong> {run.drop_point}</p>
-            {run.description && (
-              <p><strong>Description:</strong> {run.description}</p>
-            )}
             <p><strong>Max joiners:</strong> {run.capacity}</p>
             <p><strong>Seats left:</strong> {run.seats_remaining}</p>
             <p><strong>Total participants:</strong> {1 + (Array.isArray(run.orders) ? run.orders.length : 0)}</p>
+
+            <div className="card" style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <h4 style={{ margin: 0 }}>AI Load Estimate</h4>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleLoadAssessment}
+                  disabled={loadAssessmentLoading}
+                >
+                  {loadAssessmentLoading ? "Analyzing..." : "Check load"}
+                </button>
+              </div>
+              {loadAssessment && (
+                <p style={{ marginTop: 8 }}>{loadAssessment}</p>
+              )}
+              {loadAssessmentError && (
+                <p className="form-error" style={{ marginTop: 8 }}>{loadAssessmentError}</p>
+              )}
+              {!loadAssessment && !loadAssessmentError && !loadAssessmentLoading && (
+                <p style={{ marginTop: 8, color: '#666' }}>
+                  Get a quick AI assessment of how heavy this run looks based on current orders.
+                </p>
+              )}
+            </div>
 
             {run.status === 'active' && (
               <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -123,9 +178,6 @@ export default function RunDetails() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span>
                         <strong>{o.user_email}:</strong> {o.items} (${Number(o.amount).toFixed(2)})
-                        {Number(o.tip) > 0 && (
-                          <span style={{ marginLeft: 6, fontWeight: 600 }}>+ tip ${Number(o.tip).toFixed(2)}</span>
-                        )}
                         {o.status && (
                           <span style={{ marginLeft: 8, fontStyle: 'italic' }}>status: {o.status}</span>
                         )}

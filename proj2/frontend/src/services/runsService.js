@@ -28,15 +28,10 @@ async function fetchWithAuth(path, options = {}) {
   return res.json();
 }
 
-export async function createRun({ restaurant, drop_point, eta, capacity = 5, description }) {
-  const payload = { restaurant, drop_point, eta, capacity };
-  const trimmedDescription = typeof description === 'string' ? description.trim() : '';
-  if (trimmedDescription) {
-    payload.description = trimmedDescription;
-  }
+export async function createRun({ restaurant, drop_point, eta, capacity = 5 }) {
   return fetchWithAuth('/runs', {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ restaurant, drop_point, eta, capacity })
   });
 }
 
@@ -57,10 +52,9 @@ export async function listAllRuns() {
 }
 
 export async function joinRun(runId, { items, amount, tip = 0 }) {
-  const safeTip = Math.max(Number(tip) || 0, 0);
   return fetchWithAuth(`/runs/${runId}/orders`, {
     method: 'POST',
-    body: JSON.stringify({ items, amount, tip: safeTip })
+    body: JSON.stringify({ items, amount, tip })
   });
 }
 
@@ -103,5 +97,12 @@ export async function getRunDescriptionSuggestion({ restaurant, drop_point, eta 
   return fetchWithAuth('/ai/run-description', {
     method: 'POST',
     body: JSON.stringify({ restaurant, drop_point, eta })
+  });
+}
+
+export async function getRunLoadEstimate(payload) {
+  return fetchWithAuth('/ai/run-load', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
