@@ -18,7 +18,7 @@ from .db import (
     ensure_order_pin_column,
     engine,
 )
-from .models import User, FoodRun, Order
+from .models import User, FoodRun, Order, RunnerReward
 from .analytics import (
     generate_peak_payload,
     issue_peak_rewards,
@@ -50,6 +50,7 @@ from .auth import (
 
 load_dotenv()
 PEAK_FORECAST_INTERVAL_MINUTES = int(os.getenv("PEAK_FORECAST_INTERVAL_MINUTES", "60"))
+PEAK_BONUS_POINTS = int(os.getenv("PEAK_BONUS_POINTS", "5"))
 _peak_forecast_task: asyncio.Task | None = None
 
 
@@ -803,16 +804,52 @@ def complete_run(
     earned_points = round(
         total_amount / 10
     )  # 1 point per $10, rounded to nearest integer
+    peak_bonus = 0
+    peak_window = None
+    run_created = food_run.created_at
+    if run_created:
+        if isinstance(run_created, datetime):
+            created_dt = run_created
+        else:
+            created_dt = None
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+                try:
+                    created_dt = datetime.strptime(run_created, fmt)
+                    break
+                except ValueError:
+                    continue
+        if created_dt:
+            payload = generate_peak_payload(session)
+            peak_hours = {int(entry["hour"]) for entry in payload.get("peak_forecast", []) if "hour" in entry}
+            if created_dt.hour in peak_hours:
+                peak_bonus = PEAK_BONUS_POINTS
+                peak_window = created_dt.strftime("%Y-%m-%d %H:00")
 
     # Update run status
     food_run.status = "completed"
 
     # Update runner's points
     runner = session.get(User, user_id)
-    runner.points += earned_points
+    runner.points += earned_points + peak_bonus
+
+    if peak_bonus and peak_window:
+        reward = RunnerReward(
+            runner_id=user_id,
+            run_id=run_id,
+            points=peak_bonus,
+            reason=f"Peak hour bonus ({peak_window})",
+        )
+        session.add(reward)
 
     session.commit()
-    return {"message": "Run completed", "points_earned": earned_points}
+    if peak_bonus:
+        session.refresh(reward)
+    return {
+        "message": "Run completed",
+        "points_earned": earned_points + peak_bonus,
+        "base_points": earned_points,
+        "peak_bonus_points": peak_bonus,
+    }
 
 
 @app.put("/runs/{run_id}/cancel")

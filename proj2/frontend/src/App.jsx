@@ -18,6 +18,7 @@ import RunDetails from './pages/RunDetails';
 import Navbar from './components/Navbar';
 import Footer from "./components/Footer";
 import ChatbotLauncher from './components/ChatbotLauncher';
+import PeakBanner from './components/PeakBanner';
 
 function Layout({ children }) {
   const location = useLocation();
@@ -25,7 +26,10 @@ function Layout({ children }) {
   return (
     <>
       {!hideNavbar && <Navbar />}
-      <main>{children}</main>
+      <main>
+        <PeakBanner offset={hideNavbar ? 16 : 90} />
+        {children}
+      </main>
       {!hideNavbar && <Footer/>}
       <ChatbotLauncher />
     </>

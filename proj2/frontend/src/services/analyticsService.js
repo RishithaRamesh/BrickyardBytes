@@ -1,30 +1,38 @@
-import { getSavedAuth } from './authServices';
-
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5050';
 
-async function handleResponse(res) {
+function getAuth() {
+  try {
+    return JSON.parse(localStorage.getItem('auth'));
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWithAuth(path, options = {}) {
+  const auth = getAuth();
+  if (!auth?.token) throw new Error('Not authenticated');
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${auth.token}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
   if (!res.ok) {
-    let message = 'Request failed';
+    let detail = 'Request failed';
     try {
       const data = await res.json();
-      message = data?.detail || data?.error || data?.message || message;
+      const d = data?.detail ?? data?.error ?? detail;
+      detail = typeof d === 'string' ? d : JSON.stringify(d);
     } catch {
-      // ignore JSON parse errors
+      /* ignore */
     }
-    throw new Error(`${message} (${res.status})`);
+    throw new Error(detail);
   }
-  return res.json();
+  return res.status === 204 ? null : res.json();
 }
 
 export async function getPeakForecast() {
-  const auth = getSavedAuth();
-  const headers = { 'Content-Type': 'application/json' };
-  if (auth?.token) {
-    headers['Authorization'] = `Bearer ${auth.token}`;
-  }
-  const res = await fetch(`${API_BASE}/analytics/peak-forecast`, {
-    method: 'GET',
-    headers,
-  });
-  return handleResponse(res);
+  return fetchWithAuth('/analytics/peak-forecast');
 }
