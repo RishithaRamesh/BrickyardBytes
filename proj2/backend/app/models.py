@@ -47,3 +47,17 @@ class Order(SQLModel, table=True):
             DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
         ),
     )
+
+
+class RunnerReward(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    runner_id: int = Field(foreign_key="user.id")
+    run_id: int = Field(foreign_key="foodrun.id")
+    reason: str = Field(default="Peak hour bonus")
+    points: int = Field(default=0, ge=0)
+    awarded_at: Optional[str] = Field(
+        default=None,
+        sa_column=Column(
+            DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+        ),
+    )

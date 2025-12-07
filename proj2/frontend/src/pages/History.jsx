@@ -2,6 +2,46 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { listMyRunsHistory, listJoinedRunsHistory } from '../services/runsService';
 
+function parseOrderItems(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    return null;
+  }
+}
+
+function formatOrderDescription(order) {
+  const parsed = parseOrderItems(order?.items);
+  if (Array.isArray(parsed)) {
+    return parsed
+      .map((item) => {
+        const name = item?.item || item?.name || 'Item';
+        const qty = item?.qty || item?.quantity || 1;
+        return `${name} x${qty}`;
+      })
+      .join(', ');
+  }
+  if (parsed && typeof parsed === 'object') {
+    const name = parsed.item || parsed.name || 'Item';
+    const qty = parsed.qty || parsed.quantity || 1;
+    return `${name} x${qty}`;
+  }
+  return typeof order?.items === 'string' ? order.items : 'Order';
+}
+
+function customerLabel(order) {
+  if (order?.user_email) {
+    const value = order.user_email;
+    if (value.includes('@')) return value;
+    return `User #${value}`;
+  }
+  if (order?.user_username) return order.user_username;
+  if (order?.user_id) return `User #${order.user_id}`;
+  return 'Customer';
+}
+
 export default function History() {
   const { user } = useAuth();
   const [myHistory, setMyHistory] = useState([]);
@@ -58,9 +98,15 @@ export default function History() {
                     <div style={{ marginTop: 12 }}>
                       <h4>Orders</h4>
                       <ul>
-                        {run.orders.map(o => (
-                          <li key={o.id}>
-                            <strong>{o.user_email}:</strong> {o.items} (${Number(o.amount).toFixed(2)}) [{o.status}]
+                        {run.orders.map((o) => (
+                          <li key={o.id} style={{ marginBottom: 8 }}>
+                            <div>
+                              <strong>{customerLabel(o)}</strong>{' '}
+                              <span>{formatOrderDescription(o)}</span>
+                            </div>
+                            <div style={{ fontSize: '0.85rem', color: '#555' }}>
+                              ${Number(o.amount || 0).toFixed(2)} • {o.status}
+                            </div>
                           </li>
                         ))}
                       </ul>

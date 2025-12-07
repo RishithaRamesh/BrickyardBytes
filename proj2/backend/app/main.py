@@ -1,11 +1,13 @@
+import asyncio
 import os
+from datetime import datetime
 from typing import List
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 import httpx
 
 from .db import (
@@ -14,8 +16,14 @@ from .db import (
     ensure_user_points_column,
     ensure_foodrun_capacity_column,
     ensure_order_pin_column,
+    engine,
 )
 from .models import User, FoodRun, Order
+from .analytics import (
+    generate_peak_payload,
+    issue_peak_rewards,
+    list_recent_rewards,
+)
 from .schemas import (
     AuthRequest,
     AuthResponse,
@@ -30,6 +38,8 @@ from .schemas import (
     PinVerifyRequest,
     RunDescriptionRequest,
     RunDescriptionResponse,
+    PeakForecastResponse,
+    RunnerRewardResponse,
 )
 from .auth import (
     get_password_hash,
@@ -39,6 +49,8 @@ from .auth import (
 )
 
 load_dotenv()
+PEAK_FORECAST_INTERVAL_MINUTES = int(os.getenv("PEAK_FORECAST_INTERVAL_MINUTES", "60"))
+_peak_forecast_task: asyncio.Task | None = None
 
 
 def build_default_run_description(restaurant: str, drop_point: str, eta: str) -> str:
@@ -52,6 +64,32 @@ def build_default_run_description(restaurant: str, drop_point: str, eta: str) ->
     )
 
 
+def _serialize_rewards(rewards) -> List[RunnerRewardResponse]:
+    payload: List[RunnerRewardResponse] = []
+    for reward in rewards:
+        data = reward.model_dump()
+        awarded_at = data.get("awarded_at")
+        if isinstance(awarded_at, datetime):
+            data["awarded_at"] = awarded_at.isoformat()
+        payload.append(RunnerRewardResponse(**data))
+    return payload
+
+
+def _run_peak_forecast_cycle() -> None:
+    with Session(engine) as session:
+        payload = generate_peak_payload(session)
+        rewards = issue_peak_rewards(session, payload["peak_forecast"])
+        if rewards:
+            print(f"[analytics] Issued {len(rewards)} peak-hour rewards")
+
+
+async def _peak_forecast_scheduler(interval_minutes: int) -> None:
+    interval = max(interval_minutes, 5)
+    while True:
+        await asyncio.to_thread(_run_peak_forecast_cycle)
+        await asyncio.sleep(interval * 60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create DB tables on startup
@@ -60,7 +98,17 @@ async def lifespan(app: FastAPI):
     ensure_user_points_column()
     ensure_foodrun_capacity_column()
     ensure_order_pin_column()
-    yield
+    global _peak_forecast_task
+    _peak_forecast_task = asyncio.create_task(
+        _peak_forecast_scheduler(PEAK_FORECAST_INTERVAL_MINUTES)
+    )
+    try:
+        yield
+    finally:
+        if _peak_forecast_task:
+            _peak_forecast_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await _peak_forecast_task
 
 
 origins_env = os.getenv("CORS_ORIGINS", "http://localhost:5173")
@@ -141,6 +189,32 @@ def generate_run_description(
     except Exception:
         # gracefully fallback to deterministic copy
         return {"suggestion": default_suggestion}
+
+
+@app.get("/analytics/peak-forecast", response_model=PeakForecastResponse)
+def read_peak_forecast(session: Session = Depends(get_session)):
+    payload = generate_peak_payload(session)
+    recent = list_recent_rewards(session)
+    return {
+        **payload,
+        "rewards_issued": [],
+        "recent_rewards": _serialize_rewards(recent),
+    }
+
+
+@app.post("/analytics/peak-forecast/run", response_model=PeakForecastResponse)
+def trigger_peak_forecast(
+    claims=Depends(get_current_user_claims), session: Session = Depends(get_session)
+):
+    _ = claims
+    payload = generate_peak_payload(session)
+    rewards = issue_peak_rewards(session, payload["peak_forecast"])
+    recent = list_recent_rewards(session)
+    return {
+        **payload,
+        "rewards_issued": _serialize_rewards(rewards),
+        "recent_rewards": _serialize_rewards(recent),
+    }
 
 
 @app.post("/auth/register", response_model=AuthResponse)

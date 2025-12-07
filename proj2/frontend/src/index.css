@@ -291,11 +291,9 @@ body {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 50px); /* full screen minus navbar */
-  padding-top: 90px;
-  overflow: hidden;
-  box-sizing: border-box;
+  min-height: calc(100vh - 50px); /* leave room for navbar */
   padding-top: 80px;
+  gap: 1.5rem;
 }
 
 
@@ -882,6 +880,43 @@ body {
   padding: 2rem;
   box-sizing: border-box;
   animation: fadeIn 0.3s ease-in-out;
+}
+
+.peak-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: #fff4f4;
+  border: 1px solid #ffd6d6;
+  border-radius: 999px;
+  padding: 0.75rem 1.25rem;
+  box-shadow: 0 6px 20px rgba(255, 0, 0, 0.08);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+.peak-banner__label {
+  font-weight: 600;
+  color: var(--ncsu-red);
+  white-space: nowrap;
+}
+
+.peak-banner__message {
+  flex: 1;
+  margin: 0;
+  font-weight: 500;
+  color: var(--dark-gray);
+}
+
+.peak-highlight {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: #f8fafc;
+  border: 1px dashed var(--ncsu-red);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  width: fit-content;
 }
 
 .profile-section {
