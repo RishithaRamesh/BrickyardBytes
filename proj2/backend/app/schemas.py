@@ -97,3 +97,21 @@ class RunDescriptionRequest(BaseModel):
 
 class RunDescriptionResponse(BaseModel):
     suggestion: str
+
+
+class RunLoadOrder(BaseModel):
+    items: str
+    amount: Optional[float] = None
+
+
+class RunLoadRequest(BaseModel):
+    restaurant: str
+    drop_point: Optional[str] = ""
+    eta: Optional[str] = ""
+    capacity: Optional[int] = None
+    seats_remaining: Optional[int] = None
+    orders: List[RunLoadOrder] = Field(default_factory=list)
+
+
+class RunLoadResponse(BaseModel):
+    assessment: str
