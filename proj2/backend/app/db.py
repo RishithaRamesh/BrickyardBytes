@@ -54,6 +54,29 @@ def ensure_foodrun_capacity_column() -> None:
         pass
 
 
+def ensure_foodrun_description_column() -> None:
+    try:
+        if not DATABASE_URL.startswith("sqlite"):
+            return
+        with engine.begin() as conn:
+            cols = [
+                row[1] for row in conn.execute(text("PRAGMA table_info('foodrun')"))
+            ]
+            if "description" not in cols:
+                conn.execute(
+                    text("ALTER TABLE foodrun ADD COLUMN description TEXT DEFAULT ''")
+                )
+            conn.execute(
+                text(
+                    "UPDATE foodrun SET description = '' "
+                    "WHERE description IS NULL"
+                )
+            )
+    except Exception:
+        # Same best-effort posture as other ensure helpers
+        pass
+
+
 def ensure_order_pin_column() -> None:
     try:
         if not DATABASE_URL.startswith("sqlite"):
@@ -64,6 +87,42 @@ def ensure_order_pin_column() -> None:
                 conn.execute(text("ALTER TABLE 'order' ADD COLUMN pin TEXT"))
     except Exception:
         # Best-effort; ignore failures in dev
+        pass
+
+
+def ensure_order_tip_column() -> None:
+    try:
+        if not DATABASE_URL.startswith("sqlite"):
+            return
+        with engine.begin() as conn:
+            cols = [row[1] for row in conn.execute(text("PRAGMA table_info('order')"))]
+            if "tip" not in cols:
+                conn.execute(
+                    text("ALTER TABLE 'order' ADD COLUMN tip REAL DEFAULT 0.0")
+                )
+            conn.execute(
+                text(
+                    "UPDATE 'order' SET tip = 0 WHERE tip IS NULL OR NOT (tip >= 0)"
+                )
+            )
+    except Exception:
+        # Same forgiving posture—never block startup for dev schemas
+        pass
+
+
+def ensure_foodrun_status_lowercase() -> None:
+    """Normalize legacy rows so status comparisons behave consistently."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE foodrun "
+                    "SET status = LOWER(TRIM(status)) "
+                    "WHERE status IS NOT NULL AND status != LOWER(TRIM(status))"
+                )
+            )
+    except Exception:
+        # Same posture as other ensure_* helpers: never block startup
         pass
 
 

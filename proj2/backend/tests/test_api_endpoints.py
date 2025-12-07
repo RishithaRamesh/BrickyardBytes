@@ -27,6 +27,8 @@ def _reload_app(tmp_path) -> TestClient:
         dbmod.ensure_user_points_column()
         dbmod.ensure_foodrun_capacity_column()
         dbmod.ensure_order_pin_column()
+        dbmod.ensure_order_tip_column()
+        dbmod.ensure_foodrun_status_lowercase()
     except Exception:
         # Best-effort in tests; if something goes wrong, let the test run and fail
         pass
@@ -532,3 +534,30 @@ def test_30_create_order_invalid_amount(client):
         headers=auth_headers(to),
     )
     assert r2.status_code in (400, 422)
+
+
+def test_31_join_run_invalid_tip(client):
+    register(client, "tipowner@ncsu.edu", "pw")
+    owner_token = login(client, "tipowner@ncsu.edu", "pw").json()["token"]
+    run = client.post(
+        "/runs",
+        json={"restaurant": "Tip", "drop_point": "Desk", "eta": "soon", "capacity": 2},
+        headers=auth_headers(owner_token),
+    ).json()
+    run_id = run["id"]
+    register(client, "tipjoiner@ncsu.edu", "pw")
+    join_token = login(client, "tipjoiner@ncsu.edu", "pw").json()["token"]
+
+    bad_type = client.post(
+        f"/runs/{run_id}/orders",
+        json={"items": "[]", "amount": 5.0, "tip": "ten"},
+        headers=auth_headers(join_token),
+    )
+    assert bad_type.status_code == 422
+
+    negative = client.post(
+        f"/runs/{run_id}/orders",
+        json={"items": "[]", "amount": 5.0, "tip": -1},
+        headers=auth_headers(join_token),
+    )
+    assert negative.status_code == 422

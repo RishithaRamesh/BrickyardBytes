@@ -20,11 +20,11 @@ def create_run(
     return r.json()
 
 
-def join_run(client, token, run_id, items="1x Coffee", amount=3.5):
+def join_run(client, token, run_id, items="1x Coffee", amount=3.5, tip=0.0):
     return client.post(
         f"/runs/{run_id}/orders",
         headers={"Authorization": f"Bearer {token}"},
-        json={"items": items, "amount": amount},
+        json={"items": items, "amount": amount, "tip": tip},
     )
 
 
@@ -52,6 +52,28 @@ def test_completed_run_moves_to_runner_history(app_client):
     assert any(r["id"] == run_id and r["status"] == "completed" for r in mine_hist)
 
 
+def test_runner_history_sorted_newest_first(app_client):
+    runner_token, _ = register_and_login(app_client, "ph_runner_sort@ncsu.edu")
+    created_ids = []
+    for idx in range(3):
+        run = create_run(
+            app_client,
+            runner_token,
+            restaurant=f"SortCafe {idx}",
+            eta=f"12:0{idx}",
+        )
+        created_ids.append(run["id"])
+        app_client.put(
+            f"/runs/{run['id']}/complete",
+            headers={"Authorization": f"Bearer {runner_token}"},
+        )
+    mine_hist = app_client.get(
+        "/runs/mine/history", headers={"Authorization": f"Bearer {runner_token}"}
+    ).json()
+    returned_ids = [entry["id"] for entry in mine_hist]
+    assert returned_ids == list(reversed(created_ids))
+
+
 def test_completed_run_appears_in_joined_history(app_client):
     runner_token, _ = register_and_login(app_client, "ph_runner3@ncsu.edu")
     u_token, _ = register_and_login(app_client, "ph_user@ncsu.edu")
@@ -66,6 +88,37 @@ def test_completed_run_appears_in_joined_history(app_client):
         "/runs/joined/history", headers={"Authorization": f"Bearer {u_token}"}
     ).json()
     assert any(r["id"] == run_id for r in joined_hist)
+
+
+def test_joined_history_sorted_newest_first(app_client):
+    runner_token, _ = register_and_login(app_client, "ph_runner_sort_join@ncsu.edu")
+    u_token, _ = register_and_login(app_client, "ph_user_sort_join@ncsu.edu")
+    run_ids = []
+    for idx in range(3):
+        run = create_run(
+            app_client,
+            runner_token,
+            restaurant=f"JoinSort {idx}",
+            eta=f"13:0{idx}",
+        )
+        run_ids.append(run["id"])
+        join_resp = join_run(
+            app_client,
+            u_token,
+            run["id"],
+            items=f"{idx+1}x Item",
+            amount=5.0 + idx,
+        )
+        assert join_resp.status_code in (200, 201)
+        app_client.put(
+            f"/runs/{run['id']}/complete",
+            headers={"Authorization": f"Bearer {runner_token}"},
+        )
+    joined_hist = app_client.get(
+        "/runs/joined/history", headers={"Authorization": f"Bearer {u_token}"}
+    ).json()
+    returned_ids = [entry["id"] for entry in joined_hist]
+    assert returned_ids == list(reversed(run_ids))
 
 
 def test_points_visible_after_completion(app_client):
@@ -176,3 +229,36 @@ def test_joined_history_includes_my_pin_and_runner_details_hide_pins(app_client)
     ).json()
     for o in details.get("orders", []):
         assert "pin" not in o
+
+
+def test_runner_sees_uppercase_active_runs_and_can_complete(app_client):
+    runner_token, _ = register_and_login(app_client, "case_runner@ncsu.edu")
+    run = create_run(app_client, runner_token, capacity=1)
+    run_id = run["id"]
+
+    # Simulate legacy data with mixed-case status
+    from sqlalchemy import text
+    from app import db as dbmod
+
+    with dbmod.engine.begin() as conn:
+        conn.execute(
+            text("UPDATE foodrun SET status=' Active  ' WHERE id=:rid"), {"rid": run_id}
+        )
+
+    mine = app_client.get(
+        "/runs/mine", headers={"Authorization": f"Bearer {runner_token}"}
+    ).json()
+    assert any(r["id"] == run_id for r in mine)
+
+    complete = app_client.put(
+        f"/runs/{run_id}/complete", headers={"Authorization": f"Bearer {runner_token}"}
+    )
+    assert complete.status_code == 200
+
+    history = app_client.get(
+        "/runs/mine/history", headers={"Authorization": f"Bearer {runner_token}"}
+    ).json()
+    assert any(
+        r["id"] == run_id and r["status"] == "completed"
+        for r in history
+    )
