@@ -7,6 +7,80 @@ const fallbackHotspots = [
   { name: 'EB2 Atrium', tip: 'Engineering students often stage drop-offs near the EBII Lobby.' },
 ];
 
+function describeRunInsights(runs = []) {
+  if (!Array.isArray(runs) || runs.length === 0) {
+    return 'No live runs right now. I will stick with campus presets until a runner goes active.';
+  }
+  const openSeats = runs.reduce(
+    (sum, run) => sum + (Number(run?.seats_remaining) || 0),
+    0
+  );
+  const dropCounts = runs.reduce((acc, run) => {
+    const drop = run?.drop_point?.trim() || 'Drop TBD';
+    acc[drop] = (acc[drop] || 0) + 1;
+    return acc;
+  }, {});
+  const [topDropName, topDropCount] =
+    Object.entries(dropCounts).sort((a, b) => b[1] - a[1])[0] || [];
+  const soonestRun =
+    [...runs].sort((a, b) => {
+      const aEta = `${a?.eta || ''}`;
+      const bEta = `${b?.eta || ''}`;
+      return aEta.localeCompare(bEta);
+    })[0] || {};
+  const soonestText = soonestRun?.restaurant
+    ? `${soonestRun.restaurant} → ${soonestRun.drop_point} at ${
+        soonestRun.eta || 'TBD'
+      }`
+    : 'Waiting for the next ETA';
+  const busiestText = topDropName
+    ? `${topDropName} (${topDropCount} run${
+        topDropCount === 1 ? '' : 's'
+      } live)`
+    : 'Still gathering venues';
+  return (
+    `Live snapshot: ${runs.length} runs • ${openSeats} open seats.\n` +
+    `Busiest drop: ${busiestText}.\n` +
+    `Soonest departure: ${soonestText}.`
+  );
+}
+
+function describeLowSeatRuns(runs = []) {
+  const urgent = (Array.isArray(runs) ? runs : [])
+    .filter((run) => Number(run?.seats_remaining) <= 1)
+    .slice(0, 3);
+  if (!urgent.length) {
+    return 'No runs are near capacity right now. Plenty of seats if you hop in soon!';
+  }
+  const lines = urgent.map(
+    (run) =>
+      `${run.restaurant} near ${run.drop_point} — ${run.seats_remaining} seat left`
+  );
+  return `These runs are almost full:\n${lines.join('\n')}`;
+}
+
+function describeBroadcastIdeas(runs = []) {
+  const hotspots = buildHotspotSummary(runs).slice(0, 2);
+  const preview = hotspots
+    .map((spot, idx) => `${idx + 1}. ${spot.name} — ${spot.tip}`)
+    .join('\n');
+  return (
+    'Broadcast game-plan:\n' +
+    `${preview}\n` +
+    'Hardcoded tip: rotate between a busy academic core (Talley/Hunt) and a residence-heavy zone (Wolf Ridge) to catch both study and dinner crowds.'
+  );
+}
+
+const quickActions = [
+  { id: 'insights', label: 'Run Insights', buildMessage: describeRunInsights },
+  { id: 'seat-alerts', label: 'Seat Alerts', buildMessage: describeLowSeatRuns },
+  {
+    id: 'broadcast',
+    label: 'Broadcast Tips',
+    buildMessage: describeBroadcastIdeas,
+  },
+];
+
 function buildHotspotSummary(availableRuns = []) {
   if (!Array.isArray(availableRuns) || availableRuns.length === 0) {
     return fallbackHotspots;
@@ -32,12 +106,25 @@ function craftAiResponse(message, availableRuns) {
   if (!cleaned.trim()) {
     return 'Try asking me about hotspots or where the next runs are happening!';
   }
+  if (
+    cleaned.includes('insight') ||
+    cleaned.includes('stat') ||
+    cleaned.includes('summary')
+  ) {
+    return describeRunInsights(availableRuns);
+  }
+  if (cleaned.includes('seat') || cleaned.includes('full') || cleaned.includes('capacity')) {
+    return describeLowSeatRuns(availableRuns);
+  }
   if (cleaned.includes('hotspot') || cleaned.includes('where') || cleaned.includes('run')) {
     const previews = hotspots
       .slice(0, 3)
       .map((spot, idx) => `${idx + 1}. ${spot.name} — ${spot.tip}`)
       .join('\n');
     return `Here are some run hotspots right now:\n${previews}`;
+  }
+  if (cleaned.includes('broadcast') || cleaned.includes('tip')) {
+    return describeBroadcastIdeas(availableRuns);
   }
   if (cleaned.includes('thanks') || cleaned.includes('thank')) {
     return "Happy to help! Ping me anytime you're scouting for drop points.";
@@ -87,6 +174,15 @@ export default function HotspotChat({ availableRuns }) {
 
   const hotspots = useMemo(() => buildHotspotSummary(runsSnapshot), [runsSnapshot]);
 
+  const handleActionClick = (action) => {
+    const aiReply = action.buildMessage(runsSnapshot);
+    setMessages((prev) => [
+      ...prev,
+      { from: 'user', text: `[Button] ${action.label}` },
+      { from: 'ai', text: aiReply },
+    ]);
+  };
+
   const sendMessage = (evt) => {
     evt.preventDefault();
     const trimmed = input.trim();
@@ -124,6 +220,18 @@ export default function HotspotChat({ availableRuns }) {
               <span key={lineIdx}>{line}</span>
             ))}
           </div>
+        ))}
+      </div>
+      <div className="chatbot-actions" role="group" aria-label="Quick chatbot actions">
+        {quickActions.map((action) => (
+          <button
+            key={action.id}
+            type="button"
+            className="chatbot-action-button"
+            onClick={() => handleActionClick(action)}
+          >
+            {action.label}
+          </button>
         ))}
       </div>
       <form className="chatbot-input" onSubmit={sendMessage}>
