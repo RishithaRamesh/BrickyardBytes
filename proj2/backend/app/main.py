@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from contextlib import asynccontextmanager
 import httpx
@@ -14,6 +15,8 @@ from .db import (
     ensure_user_points_column,
     ensure_foodrun_capacity_column,
     ensure_order_pin_column,
+    ensure_order_tip_column,
+    ensure_foodrun_status_lowercase,
 )
 from .models import User, FoodRun, Order
 from .schemas import (
@@ -41,6 +44,22 @@ from .auth import (
 )
 
 load_dotenv()
+
+
+ACTIVE_STATUS = "active"
+
+
+def normalize_status(value: str | None) -> str:
+    cleaned = (value or "").strip().lower()
+    return cleaned or ACTIVE_STATUS
+
+
+def is_active_status(value: str | None) -> bool:
+    return normalize_status(value) == ACTIVE_STATUS
+
+
+def active_status_expr():
+    return func.lower(func.trim(FoodRun.status))
 
 
 def build_default_run_description(restaurant: str, drop_point: str, eta: str) -> str:
@@ -108,6 +127,8 @@ async def lifespan(app: FastAPI):
     ensure_user_points_column()
     ensure_foodrun_capacity_column()
     ensure_order_pin_column()
+    ensure_order_tip_column()
+    ensure_foodrun_status_lowercase()
     yield
 
 
@@ -334,6 +355,7 @@ def create_run(
 ):
     user_id = int(claims["sub"])
     food_run = FoodRun(**run.model_dump(), runner_id=user_id)
+    food_run.status = normalize_status(food_run.status)
     session.add(food_run)
     session.commit()
     session.refresh(food_run)
@@ -353,6 +375,7 @@ def create_run(
             "status",
         }
     )
+    base["status"] = normalize_status(base.get("status"))
     return {
         **base,
         "runner_username": claims.get("email", str(user_id)),
@@ -386,6 +409,7 @@ def list_runs(
                 "status",
             }
         )
+        base["status"] = normalize_status(base.get("status"))
         responses.append(
             {
                 **base,
@@ -408,7 +432,7 @@ def create_order(
     food_run = session.get(FoodRun, run_id)
     if not food_run:
         raise HTTPException(status_code=404, detail="Run not found")
-    if food_run.status != "active":
+    if not is_active_status(food_run.status):
         raise HTTPException(status_code=400, detail="Run is not active")
     if food_run.runner_id == user_id:
         raise HTTPException(status_code=400, detail="Runner cannot join own run")
@@ -447,6 +471,7 @@ def create_order(
         "items": order_row.items,
         "amount": order_row.amount,
         "user_email": u.email if u else str(user_id),
+        "tip": float(order_row.tip or 0),
         "pin": pin,
     }
 
@@ -505,11 +530,11 @@ def list_available_runs(
     claims=Depends(get_current_user_claims), session: Session = Depends(get_session)
 ):
     user_id = int(claims["sub"])
-    runs = session.exec(
-        select(FoodRun).where(FoodRun.status == "active", FoodRun.runner_id != user_id)
-    ).all()
+    runs = session.exec(select(FoodRun).where(FoodRun.runner_id != user_id)).all()
     responses = []
     for r in runs:
+        if not is_active_status(r.status):
+            continue
         count = session.exec(
             select(Order).where(Order.run_id == r.id, Order.status != "cancelled")
         ).all()
@@ -527,6 +552,7 @@ def list_available_runs(
                     "status",
                 }
             )
+            base["status"] = normalize_status(base.get("status"))
             responses.append(
                 {
                     **base,
@@ -543,11 +569,11 @@ def list_my_runs(
     claims=Depends(get_current_user_claims), session: Session = Depends(get_session)
 ):
     user_id = int(claims["sub"])
-    runs = session.exec(
-        select(FoodRun).where(FoodRun.runner_id == user_id, FoodRun.status == "active")
-    ).all()
+    runs = session.exec(select(FoodRun).where(FoodRun.runner_id == user_id)).all()
     responses = []
     for r in runs:
+        if not is_active_status(r.status):
+            continue
         orders = session.exec(
             select(Order).where(Order.run_id == r.id, Order.status != "cancelled")
         ).all()
@@ -565,6 +591,7 @@ def list_my_runs(
                     "status": o.status,
                     "items": o.items,
                     "amount": o.amount,
+                    "tip": float(o.tip or 0),
                     "user_email": u.email if u else str(o.user_id),
                 }
             )
@@ -579,6 +606,7 @@ def list_my_runs(
                 "status",
             }
         )
+        base["status"] = normalize_status(base.get("status"))
         responses.append(
             {
                 **base,
@@ -620,6 +648,7 @@ def get_run_details(
                 "status": o.status,
                 "items": o.items,
                 "amount": o.amount,
+                "tip": float(o.tip or 0),
                 "user_email": u.email if u else str(o.user_id),
             }
         )
@@ -635,6 +664,7 @@ def get_run_details(
             "status",
         }
     )
+    base["status"] = normalize_status(base.get("status"))
     return {
         **base,
         "runner_username": runner.email if runner else str(run.runner_id),
@@ -663,10 +693,12 @@ def list_joined_runs(
     if not run_ids:
         return []
     runs = session.exec(
-        select(FoodRun).where(FoodRun.id.in_(run_ids), FoodRun.status == "active")
+        select(FoodRun).where(FoodRun.id.in_(run_ids))
     ).all()
     responses = []
     for r in runs:
+        if not is_active_status(r.status):
+            continue
         count = session.exec(
             select(Order).where(Order.run_id == r.id, Order.status != "cancelled")
         ).all()
@@ -689,7 +721,7 @@ def list_joined_runs(
             "drop_point": r.drop_point or "",
             "eta": r.eta or "",
             "capacity": cap,
-            "status": r.status or "active",
+            "status": normalize_status(r.status),
             "runner_username": runner.email if runner else str(r.runner_id),
             "seats_remaining": seats_remaining,
             "orders": [],
@@ -702,6 +734,7 @@ def list_joined_runs(
                 "amount": mine.amount,
                 "status": mine.status,
                 "pin": mine.pin or "",
+                "tip": float(mine.tip or 0),
             }
         responses.append(payload)
     return responses
@@ -712,11 +745,11 @@ def list_my_runs_history(
     claims=Depends(get_current_user_claims), session: Session = Depends(get_session)
 ):
     user_id = int(claims["sub"])
-    runs = session.exec(
-        select(FoodRun).where(FoodRun.runner_id == user_id, FoodRun.status != "active")
-    ).all()
+    runs = session.exec(select(FoodRun).where(FoodRun.runner_id == user_id)).all()
     responses = []
     for r in runs:
+        if is_active_status(r.status):
+            continue
         orders = session.exec(select(Order).where(Order.run_id == r.id)).all()
         runner = session.get(User, r.runner_id)
         order_payload = []
@@ -730,6 +763,7 @@ def list_my_runs_history(
                     "status": o.status,
                     "items": o.items,
                     "amount": o.amount,
+                    "tip": float(o.tip or 0),
                     "user_email": u.email if u else str(o.user_id),
                 }
             )
@@ -744,6 +778,7 @@ def list_my_runs_history(
                 "status",
             }
         )
+        base["status"] = normalize_status(base.get("status"))
         responses.append(
             {
                 **base,
@@ -752,6 +787,7 @@ def list_my_runs_history(
                 "orders": order_payload,
             }
         )
+    responses.sort(key=lambda r: r["id"], reverse=True)
     return responses
 
 
@@ -766,10 +802,12 @@ def list_joined_runs_history(
     if not run_ids:
         return []
     runs = session.exec(
-        select(FoodRun).where(FoodRun.id.in_(run_ids), FoodRun.status != "active")
+        select(FoodRun).where(FoodRun.id.in_(run_ids))
     ).all()
     responses = []
     for r in runs:
+        if is_active_status(r.status):
+            continue
         runner = session.get(User, r.runner_id)
         # include my_order for historical reference
         mine = session.exec(
@@ -795,6 +833,7 @@ def list_joined_runs_history(
             "seats_remaining": 0,
             "orders": [],
         }
+        payload["status"] = normalize_status(payload.get("status"))
         if mine:
             payload["my_order"] = {
                 "id": mine.id,
@@ -803,8 +842,10 @@ def list_joined_runs_history(
                 "amount": mine.amount,
                 "status": mine.status,
                 "pin": (mine.pin or ""),
+                "tip": float(mine.tip or 0),
             }
         responses.append(payload)
+    responses.sort(key=lambda r: r["id"], reverse=True)
     return responses
 
 
@@ -852,7 +893,7 @@ def complete_run(
     )  # 1 point per $10, rounded to nearest integer
 
     # Update run status
-    food_run.status = "completed"
+    food_run.status = normalize_status("completed")
 
     # Update runner's points
     runner = session.get(User, user_id)
@@ -874,9 +915,9 @@ def cancel_run(
         raise HTTPException(status_code=404, detail="Run not found")
     if food_run.runner_id != user_id:
         raise HTTPException(status_code=403, detail="Not authorized")
-    if food_run.status != "active":
+    if not is_active_status(food_run.status):
         raise HTTPException(status_code=400, detail="Run is not active")
-    food_run.status = "cancelled"
+    food_run.status = normalize_status("cancelled")
     session.commit()
     return {"message": "Run cancelled"}
 
