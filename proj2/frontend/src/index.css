@@ -147,6 +147,19 @@ body {
   box-shadow: 0 0 0 3px rgba(204, 0, 0, 0.1);
 }
 
+.ai-suggestion-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.ai-suggestion {
+  resize: vertical;
+  min-height: 80px;
+  font-size: 0.95rem;
+}
+
 /* Error state for inputs */
 .input-error {
   border-color: var(--ncsu-red) !important;
@@ -294,6 +307,7 @@ body {
   min-height: calc(100vh - 50px); /* leave room for navbar */
   padding-top: 80px;
   gap: 1.5rem;
+  overflow-y: auto;
 }
 
 
@@ -721,6 +735,11 @@ body {
 
 .run-card-body p {
   margin: 0.5rem 0;
+}
+
+.run-card-description {
+  font-style: italic;
+  color: var(--text-gray);
 }
 
 .run-card-footer {

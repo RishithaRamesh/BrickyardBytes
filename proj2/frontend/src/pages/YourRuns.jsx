@@ -69,8 +69,16 @@ export default function YourRuns() {
           <p>You haven’t broadcasted any runs yet.</p>
         ) : (
           <div className="runs-list">
-            {myRuns.map((run) => (
-              <div key={run.id} className="run-card run-card--auto">
+            {myRuns.map((run) => {
+              const tipValues = Array.isArray(run.orders)
+                ? run.orders.map((o) => Math.max(Number(o.tip) || 0, 0))
+                : [];
+              const highestTip = tipValues.reduce(
+                (max, val) => (val > max ? val : max),
+                0
+              );
+              return (
+                <div key={run.id} className="run-card run-card--auto">
                 <div className="run-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <h3 style={{ margin: 0 }}><Link to={`/your-runs/${run.id}`}>{run.restaurant}</Link></h3>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -85,6 +93,12 @@ export default function YourRuns() {
                   <p><strong>Max joiners:</strong> {run.capacity}</p>
                   <p><strong>Joined:</strong> {Array.isArray(run.orders) ? run.orders.length : 0}</p>
                   <p><strong>Seats left:</strong> {run.seats_remaining}</p>
+                  {highestTip > 0 && (
+                    <p><strong>Highest tip:</strong> ${highestTip.toFixed(2)}</p>
+                  )}
+                  {run.description && (
+                    <p className="run-card-description">{run.description}</p>
+                  )}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <Link className="btn btn-secondary" to={`/your-runs/${run.id}`}>Manage</Link>
                     {run.status === 'active' && (
@@ -95,8 +109,9 @@ export default function YourRuns() {
                     )}
                   </div>
                 </div>
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </section>

@@ -104,6 +104,9 @@ export default function RunDetails() {
           <div className="run-card-body">
             <p><strong>Status:</strong> {run.status}</p>
             <p><strong>Drop:</strong> {run.drop_point}</p>
+            {run.description && (
+              <p><strong>Description:</strong> {run.description}</p>
+            )}
             <p><strong>Max joiners:</strong> {run.capacity}</p>
             <p><strong>Seats left:</strong> {run.seats_remaining}</p>
             <p><strong>Total participants:</strong> {1 + (Array.isArray(run.orders) ? run.orders.length : 0)}</p>
@@ -123,6 +126,9 @@ export default function RunDetails() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span>
                         <strong>{o.user_email}:</strong> {o.items} (${Number(o.amount).toFixed(2)})
+                        {Number(o.tip) > 0 && (
+                          <span style={{ marginLeft: 6, fontWeight: 600 }}>+ tip ${Number(o.tip).toFixed(2)}</span>
+                        )}
                         {o.status && (
                           <span style={{ marginLeft: 8, fontStyle: 'italic' }}>status: {o.status}</span>
                         )}

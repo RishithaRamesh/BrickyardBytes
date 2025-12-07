@@ -25,6 +25,9 @@ class FoodRun(SQLModel, table=True):
     eta: str
     capacity: int = Field(default=5)  # maximum number of joiners/orders
     status: str = Field(default="active")  # active, completed, cancelled
+    description: Optional[str] = Field(
+        default=None, sa_column=Column(String, nullable=True)
+    )
     created_at: Optional[str] = Field(
         default=None,
         sa_column=Column(
@@ -39,6 +42,7 @@ class Order(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id")
     items: str  # JSON string of ordered items
     amount: float
+    tip: float = Field(default=0.0)
     status: str = Field(default="pending")  # pending, paid, delivered
     pin: Optional[str] = None  # 4-digit PIN for order pickup verification
     created_at: Optional[str] = Field(

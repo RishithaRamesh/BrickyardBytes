@@ -57,8 +57,10 @@ export default function History() {
         listMyRunsHistory(),
         listJoinedRunsHistory(),
       ]);
-      setMyHistory(mine);
-      setJoinedHistory(joined);
+      const sortByIdDesc = (arr = []) =>
+        [...arr].sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0));
+      setMyHistory(sortByIdDesc(mine));
+      setJoinedHistory(sortByIdDesc(joined));
     } catch (e) {
       setError(e.message || 'Failed to load history');
     } finally {
@@ -94,6 +96,9 @@ export default function History() {
                 <div className="run-card-body">
                   <p><strong>ETA:</strong> {run.eta}</p>
                   <p><strong>Drop:</strong> {run.drop_point}</p>
+                  {run.description && (
+                    <p className="run-card-description">{run.description}</p>
+                  )}
                   {Array.isArray(run.orders) && run.orders.length > 0 && (
                     <div style={{ marginTop: 12 }}>
                       <h4>Orders</h4>
@@ -134,6 +139,9 @@ export default function History() {
                 <div className="run-card-body">
                   <p><strong>ETA:</strong> {run.eta}</p>
                   <p><strong>Drop:</strong> {run.drop_point}</p>
+                  {run.description && (
+                    <p className="run-card-description">{run.description}</p>
+                  )}
                 </div>
               </div>
             ))}

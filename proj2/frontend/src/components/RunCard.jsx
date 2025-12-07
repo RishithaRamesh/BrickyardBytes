@@ -14,8 +14,11 @@ export default function RunCard({ run, onJoin ,joinedRuns}) {
       </div>
 
       <div className="run-card-body">
-  <p><strong>ETA:</strong> {run.eta}</p>
-  <p><strong>Available Seats:</strong> {run.seats_remaining}</p>
+        <p><strong>ETA:</strong> {run.eta}</p>
+        <p><strong>Available Seats:</strong> {run.seats_remaining}</p>
+        {run.description && (
+          <p className="run-card-description">{run.description}</p>
+        )}
       </div>
 
       <div className="run-card-footer">

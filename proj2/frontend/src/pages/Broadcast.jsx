@@ -37,7 +37,13 @@ export default function Broadcast() {
     setError("");
     setLoading(true);
     try {
-      await createRun({ restaurant, drop_point: dropPoint, eta, capacity: Number(capacity) });
+      await createRun({
+        restaurant,
+        drop_point: dropPoint,
+        eta,
+        capacity: Number(capacity),
+        description: suggestion,
+      });
       // Keep the user on this tab, but you can navigate to Your Runs if preferred
       setRestaurant("");
       setEta("");
@@ -143,11 +149,14 @@ export default function Broadcast() {
                 {suggestionLoading ? "Generating..." : "Smart Suggest description"}
               </button>
             </div>
-            {suggestion && (
-              <p id="ai-suggestion" className="ai-suggestion">
-                {suggestion}
-              </p>
-            )}
+            <textarea
+              id="ai-suggestion"
+              className="ai-suggestion"
+              value={suggestion}
+              onChange={(e) => setSuggestion(e.target.value)}
+              placeholder="Generate a blurb or type your own run description"
+              rows={3}
+            />
             {suggestionError && <p className="form-error">{suggestionError}</p>}
           </div>
 

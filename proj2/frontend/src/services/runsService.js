@@ -28,10 +28,15 @@ async function fetchWithAuth(path, options = {}) {
   return res.json();
 }
 
-export async function createRun({ restaurant, drop_point, eta, capacity = 5 }) {
+export async function createRun({ restaurant, drop_point, eta, capacity = 5, description }) {
+  const payload = { restaurant, drop_point, eta, capacity };
+  const trimmedDescription = typeof description === 'string' ? description.trim() : '';
+  if (trimmedDescription) {
+    payload.description = trimmedDescription;
+  }
   return fetchWithAuth('/runs', {
     method: 'POST',
-    body: JSON.stringify({ restaurant, drop_point, eta, capacity })
+    body: JSON.stringify(payload)
   });
 }
 
@@ -51,10 +56,11 @@ export async function listAllRuns() {
   return fetchWithAuth('/runs');
 }
 
-export async function joinRun(runId, { items, amount }) {
+export async function joinRun(runId, { items, amount, tip = 0 }) {
+  const safeTip = Math.max(Number(tip) || 0, 0);
   return fetchWithAuth(`/runs/${runId}/orders`, {
     method: 'POST',
-    body: JSON.stringify({ items, amount })
+    body: JSON.stringify({ items, amount, tip: safeTip })
   });
 }
 
