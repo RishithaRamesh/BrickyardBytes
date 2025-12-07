@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import React from "react";
 import RunDetails from "../pages/RunDetails";
+import { MemoryRouter } from "react-router-dom";
 import {
   getRunById,
   getRunLoadEstimate,
@@ -30,8 +31,10 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
+const mockShowToast = vi.fn();
+
 vi.mock("../context/ToastContext", () => ({
-  useToast: () => ({ showToast: vi.fn() }),
+  useToast: () => ({ showToast: mockShowToast }),
 }));
 
 const baseRun = {
@@ -52,21 +55,39 @@ const baseRun = {
   ],
 };
 
-describe("RunDetails AI load estimate", () => {
+const renderRunDetails = () =>
+  render(
+    <MemoryRouter>
+      <RunDetails />
+    </MemoryRouter>
+  );
+
+describe("RunDetails interactions", () => {
+  let confirmSpy;
   beforeEach(() => {
     vi.clearAllMocks();
+    mockShowToast.mockReset();
     getRunById.mockResolvedValue(baseRun);
+    if (!window.confirm) {
+      window.confirm = () => true;
+    }
+    confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    confirmSpy.mockRestore();
   });
 
   it("fetches a load assessment when the button is clicked", async () => {
     getRunLoadEstimate.mockResolvedValue({
       assessment: "Almost full; plan extra time.",
     });
-    render(<RunDetails />);
+    renderRunDetails();
 
     await waitFor(() => expect(getRunById).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole("button", { name: /check load/i }));
+    const checkButton = await screen.findByRole("button", { name: /check load/i });
+    fireEvent.click(checkButton);
 
     await waitFor(() => {
       expect(getRunLoadEstimate).toHaveBeenCalledWith({
@@ -89,16 +110,82 @@ describe("RunDetails AI load estimate", () => {
 
   it("shows an error message if the load estimate fails", async () => {
     getRunLoadEstimate.mockRejectedValueOnce(new Error("network down"));
-    render(<RunDetails />);
+    renderRunDetails();
 
     await waitFor(() => expect(getRunById).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: /check load/i }));
 
     await waitFor(() =>
+      expect(screen.getByText(/network down/i)).toBeInTheDocument()
+    );
+  });
+  it("removes an order after confirmation", async () => {
+    removeOrder.mockResolvedValueOnce({});
+    renderRunDetails();
+
+    await waitFor(() => expect(getRunById).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /remove/i }));
+
+    await waitFor(() =>
+      expect(removeOrder).toHaveBeenCalledWith(baseRun.id, baseRun.orders[0].id)
+    );
+  });
+
+  it("handles PIN verification success", async () => {
+    verifyOrderPin.mockResolvedValueOnce({});
+    renderRunDetails();
+    await waitFor(() => expect(getRunById).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: /verify pin/i }));
+    fireEvent.change(screen.getByPlaceholderText(/enter 4-digit pin/i), {
+      target: { value: "1234" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() =>
+      expect(verifyOrderPin).toHaveBeenCalledWith(baseRun.id, baseRun.orders[0].id, "1234")
+    );
+    expect(mockShowToast).toHaveBeenCalledWith(
+      "PIN verified. Marked delivered.",
+      { type: "success" }
+    );
+  });
+
+  it("warns when submitting empty PIN", async () => {
+    renderRunDetails();
+    await waitFor(() => expect(getRunById).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: /verify pin/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^submit$/i }));
+
+    expect(mockShowToast).toHaveBeenCalledWith(
+      "Please enter a PIN",
+      { type: "warning" }
+    );
+    expect(verifyOrderPin).not.toHaveBeenCalled();
+  });
+
+  it("shows load error when initial fetch fails", async () => {
+    getRunById.mockRejectedValueOnce(new Error("boom"));
+    renderRunDetails();
+    await waitFor(() =>
       expect(
-        screen.getByText(/unable to fetch load estimate/i)
+        screen.getByText(/boom/i)
       ).toBeInTheDocument()
     );
+  });
+
+  it("completes and cancels run when confirmed", async () => {
+    completeRun.mockResolvedValueOnce({});
+    cancelRun.mockResolvedValueOnce({});
+    renderRunDetails();
+    await waitFor(() => expect(getRunById).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: /complete/i }));
+    await waitFor(() => expect(completeRun).toHaveBeenCalledWith(baseRun.id));
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    await waitFor(() => expect(cancelRun).toHaveBeenCalledWith(baseRun.id));
   });
 });
