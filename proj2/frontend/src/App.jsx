@@ -27,7 +27,7 @@ function Layout({ children }) {
     <>
       {!hideNavbar && <Navbar />}
       <main>
-        <PeakBanner offset={hideNavbar ? 16 : 90} />
+        {!hideNavbar && <PeakBanner offset={90} />}
         {children}
       </main>
       {!hideNavbar && <Footer/>}

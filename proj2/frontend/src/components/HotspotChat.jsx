@@ -289,7 +289,7 @@ export default function HotspotChat({ availableRuns }) {
     const aiReply = ensureMessagePayload(action.buildMessage(runsSnapshot));
     setMessages((prev) => [
       ...prev,
-      { from: 'user', text: `[Button] ${action.label}` },
+      { from: 'user', text: `${action.label}` },
       { from: 'ai', ...aiReply },
     ]);
   };

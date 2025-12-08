@@ -162,7 +162,7 @@ export default function Home() {
           <div className="runs-list scrollable">
             {joined.length > 0 ? (
               joined.map((run) => (
-                <div key={run.id} className="run-card">
+                <div key={run.id} className="run-card run-card--auto">
                   <div className="run-card-header">
                     <h3>{run.restaurant}</h3>
                     <span className="run-card-runner">by {run.runner_username}</span>
