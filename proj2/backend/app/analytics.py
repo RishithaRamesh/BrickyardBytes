@@ -12,6 +12,9 @@ from sqlmodel import Session, select
 
 from .models import FoodRun, RunnerReward, User
 
+# Require a small amount of historical activity before declaring peak windows
+MIN_ACTIVE_HOURS_FOR_PEAK = 3
+
 
 def _safe_datetime(value: Any) -> datetime | None:
     if value is None:
@@ -149,7 +152,12 @@ def forecast_peak_hours(profile: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         for entry in profile
         if entry["avg_orders_per_day"] > 0 or entry["avg_runs_per_day"] > 0
     ]
-    reference = active or profile
+    # Guard against tiny datasets skewing the forecast. When all data lives in a
+    # single hour (the common case in tests), awarding a "peak" bonus makes every
+    # run look like a surge window, which breaks point accounting expectations.
+    if len(active) < MIN_ACTIVE_HOURS_FOR_PEAK:
+        return []
+    reference = active
     scores = [entry["demand_score"] for entry in reference]
     mean_score = sum(scores) / len(scores)
     if len(scores) > 1:
