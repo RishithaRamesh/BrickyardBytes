@@ -28,7 +28,10 @@ export default function YourRuns() {
     setLoading(true);
     setError("");
     try {
-      await completeRun(run.id);
+      const result = await completeRun(run.id);
+      if (result?.points_earned > 0) {
+        window.alert(`Congrats! You earned ${result.points_earned} points (including any peak bonus).`);
+      }
       await refresh();
     } catch (e) {
       setError(e.message || "Failed to complete run");

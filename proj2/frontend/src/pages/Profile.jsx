@@ -8,7 +8,6 @@ export default function Profile() {
   const [profileData, setProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
   useEffect(() => {
     async function loadProfileData() {
       try {
@@ -25,6 +24,14 @@ export default function Profile() {
       loadProfileData();
     }
   }, [user]);
+
+  function formatPeakWindow(hour) {
+    if (typeof hour !== 'number') return '—';
+    const start = String(hour).padStart(2, '0');
+    const endHour = (hour + 1) % 24;
+    const end = String(endHour).padStart(2, '0');
+    return `${start}:00 - ${end}:00`;
+  }
 
   if (!user) return <p className="p-4">No user logged in.</p>;
   if (loading) return <p className="p-4">Loading...</p>;

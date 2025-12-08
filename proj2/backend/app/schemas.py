@@ -103,6 +103,47 @@ class RunDescriptionResponse(BaseModel):
     suggestion: str
 
 
+class RunnerRewardResponse(BaseModel):
+    id: int
+    runner_id: int
+    run_id: int
+    reason: str
+    points: int
+    awarded_at: Optional[str]
+
+
+class HourlyTimeseriesBucket(BaseModel):
+    hour_block: str
+    run_count: int
+    completed_runs: int
+    total_capacity: int
+    order_count: int
+    utilization: float
+
+
+class HourlyProfileEntry(BaseModel):
+    hour: int
+    avg_orders_per_day: float
+    avg_runs_per_day: float
+    avg_capacity_per_day: float
+    utilization_ratio: float
+    demand_score: float
+
+
+class PeakHourEntry(BaseModel):
+    hour: int
+    demand_score: float
+    utilization_ratio: float
+
+
+class PeakForecastResponse(BaseModel):
+    hourly_timeseries: List[HourlyTimeseriesBucket]
+    hourly_profile: List[HourlyProfileEntry]
+    peak_forecast: List[PeakHourEntry]
+    rewards_issued: List[RunnerRewardResponse] = []
+    recent_rewards: List[RunnerRewardResponse] = []
+
+
 class RunLoadOrder(BaseModel):
     items: str
     amount: Optional[float] = None

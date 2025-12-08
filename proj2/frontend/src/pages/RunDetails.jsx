@@ -3,6 +3,51 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { getRunById, removeOrder, completeRun, cancelRun, verifyOrderPin, getRunLoadEstimate } from "../services/runsService";
 import { useToast } from "../context/ToastContext";
 
+function parseOrderItems(raw) {
+  if (!raw) return null;
+  if (typeof raw === "object") return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function buildOrderItemList(raw) {
+  const parsed = parseOrderItems(raw);
+  if (Array.isArray(parsed)) {
+    return parsed.map((item) => {
+      const name = item?.item || item?.name || "Item";
+      const qty = item?.qty || item?.quantity || 1;
+      return `${qty} x ${name}`;
+    });
+  }
+  if (parsed && typeof parsed === "object") {
+    const name = parsed.item || parsed.name || "Item";
+    const qty = parsed.qty || parsed.quantity || 1;
+    return [`${qty} x ${name}`];
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return raw
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+  return ["Custom order"];
+}
+
+function customerLabel(order) {
+  if (order?.user_email) return order.user_email;
+  if (order?.user_username) return order.user_username;
+  if (order?.user_id) return `User #${order.user_id}`;
+  return "Customer";
+}
+
+function formatCurrency(value) {
+  const amount = Number(value || 0);
+  return `$${Number.isFinite(amount) ? amount.toFixed(2) : "0.00"}`;
+}
+
 export default function RunDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -81,7 +126,10 @@ export default function RunDetails() {
     setLoading(true);
     setError("");
     try {
-      await completeRun(run.id);
+      const result = await completeRun(run.id);
+      if (result?.points_earned > 0) {
+        window.alert(`Congrats! You earned ${result.points_earned} points (including any peak bonus).`);
+      }
       await load();
     } catch (e) {
       setError(e.message || "Failed to complete run");
@@ -172,32 +220,45 @@ export default function RunDetails() {
 
             <h4>Joined Users ({joinedCount})</h4>
             {Array.isArray(run.orders) && run.orders.length > 0 ? (
-              <ul>
+              <ul className="order-list">
                 {run.orders.map((o) => (
-                  <li key={o.id} style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 8, borderBottom: '1px solid #eee' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <span>
-                        <strong>{o.user_email}:</strong> {o.items} (${Number(o.amount).toFixed(2)})
-                        {o.status && (
-                          <span style={{ marginLeft: 8, fontStyle: 'italic' }}>status: {o.status}</span>
-                        )}
-                      </span>
-                      {run.status === 'active' && (
-                        <span style={{ display: 'flex', gap: 8 }}>
-                          {o.status !== 'delivered' && (
-                            <button
-                              className="btn btn-secondary"
-                              onClick={() => { setVerifyingId(o.id); setPinValue(""); setShowPin(false); }}
-                              disabled={loading}
-                            >Verify PIN</button>
-                          )}
-                          <button className="btn btn-secondary" onClick={() => handleRemove(o.id)} disabled={loading}>Remove</button>
-                        </span>
+                  <li key={o.id} className="order-row">
+                    <div className="order-row__header">
+                      <div className="order-row__info">
+                        <span className="order-row__name">{customerLabel(o)}</span>
+                        <div className="order-row__items">
+                          {buildOrderItemList(o.items).map((item, idx) => (
+                            <span key={`${o.id}-item-${idx}`} className="order-pill">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="order-row__amount">{formatCurrency(o.amount)}</div>
+                    </div>
+                    <div className="order-row__meta">
+                      <span>Status: {o.status || "pending"}</span>
+                      {typeof o.tip === "number" && (
+                        <span>Tip: {formatCurrency(o.tip)}</span>
                       )}
                     </div>
+                    {run.status === 'active' && (
+                      <div className="order-row__actions">
+                        {o.status !== 'delivered' && (
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => { setVerifyingId(o.id); setPinValue(""); setShowPin(false); }}
+                            disabled={loading}
+                          >
+                            Verify PIN
+                          </button>
+                        )}
+                        <button className="btn btn-secondary" onClick={() => handleRemove(o.id)} disabled={loading}>Remove</button>
+                      </div>
+                    )}
                     {verifyingId === o.id && (
-                      <div className="card" style={{ padding: '12px', marginTop: 4 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div className="order-row__verify">
+                        <div className="order-row__verify-fields">
                           <input
                             type={showPin ? 'text' : 'password'}
                             placeholder="Enter 4-digit PIN"
@@ -209,7 +270,9 @@ export default function RunDetails() {
                             className="btn btn-secondary"
                             onClick={() => setShowPin((v) => !v)}
                             title={showPin ? 'Hide PIN' : 'Show PIN'}
-                          >{showPin ? '🙈' : '👁️'}</button>
+                          >
+                            {showPin ? '🙈' : '👁️'}
+                          </button>
                           <button
                             className="btn btn-primary"
                             onClick={async () => {
@@ -228,7 +291,9 @@ export default function RunDetails() {
                                 setLoading(false);
                               }
                             }}
-                          >Submit</button>
+                          >
+                            Submit
+                          </button>
                           <button className="btn btn-secondary" onClick={() => { setVerifyingId(null); setPinValue(""); }}>Cancel</button>
                         </div>
                       </div>
