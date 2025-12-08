@@ -22,7 +22,7 @@ class OrderCreate(BaseModel):
     items: str
     # enforce positive amounts for orders
     amount: float = Field(..., gt=0)
-    tip: float = Field(default=0, ge=0)
+    tip: Optional[float] = Field(default=0, ge=0)
     pin: Optional[str] = (
         None  # optional client-provided PIN; server will generate if missing
     )
@@ -58,9 +58,9 @@ class MyOrderResponse(BaseModel):
     run_id: int
     items: str
     amount: float
-    tip: float
     status: str
     pin: str
+    tip: float = 0.0
 
 
 class FoodRunCreate(BaseModel):
@@ -68,7 +68,6 @@ class FoodRunCreate(BaseModel):
     drop_point: str
     eta: str
     capacity: int = 5
-    description: Optional[str] = None
 
 
 class FoodRunResponse(FoodRunCreate):
@@ -143,3 +142,21 @@ class PeakForecastResponse(BaseModel):
     peak_forecast: List[PeakHourEntry]
     rewards_issued: List[RunnerRewardResponse] = []
     recent_rewards: List[RunnerRewardResponse] = []
+
+
+class RunLoadOrder(BaseModel):
+    items: str
+    amount: Optional[float] = None
+
+
+class RunLoadRequest(BaseModel):
+    restaurant: str
+    drop_point: Optional[str] = ""
+    eta: Optional[str] = ""
+    capacity: Optional[int] = None
+    seats_remaining: Optional[int] = None
+    orders: List[RunLoadOrder] = Field(default_factory=list)
+
+
+class RunLoadResponse(BaseModel):
+    assessment: str

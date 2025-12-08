@@ -313,11 +313,9 @@ body {
 
 .runs-list {
   flex-grow: 1;
-
   display: grid;
-
   gap: 1.5rem;
-
+  align-items: start;
   animation: fadeIn 0.3s ease-in-out;
 }
 
@@ -676,7 +674,7 @@ body {
    ========================================================================== */
 
 
- .run-card {
+.run-card {
   position: relative;
   background-color: var(--white);
   border-radius: 12px;
@@ -684,7 +682,8 @@ body {
   display: flex;
   flex-direction: column;
   transition: transform 0.2s, box-shadow 0.2s;
-  height: 320px;
+  min-height: 220px;
+  height: auto;
   overflow: hidden;
 }
 
@@ -730,7 +729,6 @@ body {
 
 .run-card-body {
   padding: 1rem 1.5rem;
-  flex-grow: 1; /* Pushes footer down */
 }
 
 .run-card-body p {

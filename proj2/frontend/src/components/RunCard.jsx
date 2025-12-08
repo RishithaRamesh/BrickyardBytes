@@ -1,7 +1,7 @@
 import { useAuth } from '../hooks/useAuth';
 
 
-export default function RunCard({ run, onJoin ,joinedRuns}) {
+export default function RunCard({ run, onJoin, joinedRuns, onCheckLoad, loadInsight, loadLoading }) {
   const { user } = useAuth();
   const hasJoined = joinedRuns.some((r) => r.id === run.id);
   const isOwner = run.runner_username === user?.username;
@@ -10,7 +10,7 @@ export default function RunCard({ run, onJoin ,joinedRuns}) {
     <div className="run-card">
       <div className="run-card-header">
         <h3>{run.restaurant}</h3>
-  <span className="run-card-runner">by {run.runner_username}</span>
+        <span className="run-card-runner">by {run.runner_username}</span>
       </div>
 
       <div className="run-card-body">
@@ -22,6 +22,26 @@ export default function RunCard({ run, onJoin ,joinedRuns}) {
       </div>
 
       <div className="run-card-footer">
+        {onCheckLoad && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6, marginBottom: 8, width: '100%' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onCheckLoad}
+              disabled={loadLoading}
+            >
+              {loadLoading ? "Analyzing..." : "Check load"}
+            </button>
+            {loadInsight?.text && (
+              <p
+                style={{ margin: 0 }}
+                className={loadInsight.error ? "form-error" : ""}
+              >
+                {loadInsight.text}
+              </p>
+            )}
+          </div>
+        )}
         <button
           className="btn btn-primary"
           onClick={() => onJoin(run)}
